@@ -75,7 +75,7 @@
         /* ── Main Layout ── */
         .app-layout {
             display: flex;
-            height: calc(100vh - 42px);
+            height: calc(100vh - 42px - 48px);   /* top bar + timeline bar */
         }
 
         /* ── Map Container ── */
@@ -419,6 +419,262 @@
         .event-border-gm { border-left-color: #a33; }
         .event-border-default { border-left-color: #888; }
 
+        /* ── Calendar Panel ── */
+        .cal-panel {
+            width: 336px;
+            flex-shrink: 0;
+            background: #151310;
+            border-right: 1px solid #333;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: width 0.3s;
+        }
+        .cal-panel.collapsed { width: 0; border-right: none; }
+        .cal-toggle {
+            position: absolute;
+            left: 336px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 200;
+            background: #222;
+            border: 1px solid #444;
+            border-left: none;
+            color: #887750;
+            padding: 12px 4px;
+            cursor: pointer;
+            border-radius: 0 4px 4px 0;
+            font-size: 16px;
+            transition: left 0.3s;
+        }
+        .cal-toggle:hover { color: #c9b882; background: #2a2520; }
+        .cal-toggle.collapsed { left: 0; }
+        .cal-inner {
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-width: 336px;
+            overflow: hidden;
+        }
+        .cal-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
+        .cal-nav {
+            background: none;
+            border: 1px solid #333;
+            color: #887750;
+            border-radius: 4px;
+            width: 28px;
+            height: 28px;
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+        .cal-nav:hover { color: #c9b882; border-color: #887750; }
+        .cal-title { flex: 1; text-align: center; cursor: pointer; min-width: 0; }
+        .cal-title.top { cursor: default; }
+        .cal-season {
+            font-size: 10px;
+            color: #887750;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            height: 13px;
+        }
+        .cal-title h2 {
+            font-family: 'IM Fell English', serif;
+            font-size: 19px;
+            color: #c9b882;
+            font-weight: normal;
+            line-height: 1.15;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .cal-title:not(.top):hover h2 { color: #e8dcc8; }
+        .cal-sub { font-size: 11px; color: #666; font-style: italic; height: 14px; }
+
+        .cal-grid { display: grid; gap: 3px; }
+        .cal-grid.month { grid-template-columns: repeat(8, 1fr); }
+        .cal-grid.year, .cal-grid.years { grid-template-columns: repeat(4, 1fr); }
+        .cal-wd {
+            font-size: 9px;
+            color: #777;
+            text-align: center;
+            padding: 2px 0 3px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            overflow: hidden;
+        }
+        .cal-wd.unnamed { color: #4a4a4a; font-style: italic; }
+        .cal-cell {
+            background: #1e1b17;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            text-align: center;
+            color: #bbb;
+            font-size: 13px;
+            transition: background 0.1s, border-color 0.1s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            min-width: 0;
+        }
+        .cal-cell:hover { background: #2a2520; color: #e8dcc8; }
+        .cal-cell.day { aspect-ratio: 1; }
+        .cal-cell.month, .cal-cell.year { padding: 9px 3px; }
+        .cal-cell.future { color: #666; }
+        .cal-cell.future .cal-dot { opacity: 0.55; }
+        .cal-cell.today { box-shadow: inset 0 0 0 1px #5f8f8a; }
+        .cal-cell.selected { border-color: #c9b882; color: #e8dcc8; background: #2a2520; }
+        .cal-cell .cal-name {
+            font-size: 11px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+        }
+        .cal-cell .cal-count { font-size: 10px; color: #887750; line-height: 1; min-height: 10px; }
+        .cal-dots { display: flex; gap: 2px; height: 4px; }
+        .cal-dot { width: 4px; height: 4px; border-radius: 50%; }
+
+        .cal-actions { display: flex; gap: 6px; align-items: center; margin-top: 10px; }
+        .cal-btn {
+            background: #222;
+            color: #887750;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 2px 9px;
+            cursor: pointer;
+            font-family: 'Crimson Text', serif;
+            font-size: 12px;
+        }
+        .cal-btn:hover:not(:disabled) { color: #c9b882; border-color: #887750; }
+        .cal-btn:disabled { opacity: 0.4; cursor: default; }
+        .cal-btn.active { color: #c9b882; border-color: #887750; background: #2a2520; }
+
+        .cal-log {
+            margin-top: 10px;
+            padding: 10px;
+            background: #1e1b17;
+            border: 1px solid #2a2520;
+            border-radius: 6px;
+        }
+        .cal-log h4 { font-size: 13px; color: #887750; margin-bottom: 8px; font-weight: normal; }
+        .cal-log h4 span { color: #c9b882; }
+        .cal-log .form-row { margin-bottom: 6px; }
+        .cal-log .form-row input, .cal-log .form-row select, .cal-log .form-row textarea { font-size: 13px; padding: 4px 7px; }
+        .cal-log .form-row textarea { min-height: 42px; }
+        .cal-log .btn-add-event:disabled { opacity: 0.4; cursor: default; }
+
+        .cal-settings {
+            margin-top: 10px;
+            padding: 10px;
+            background: #1e1b17;
+            border: 1px solid #2a2520;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        .cal-set-row { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; }
+        .cal-set-row:last-child { margin-bottom: 0; }
+        .cal-set-row label { color: #887750; width: 76px; flex-shrink: 0; }
+        .cal-set-row .cal-set-value { color: #ccc; flex: 1; }
+        .cal-settings select, .cal-settings input {
+            background: #222;
+            color: #e8dcc8;
+            border: 1px solid #3a3530;
+            border-radius: 4px;
+            padding: 2px 5px;
+            font-family: 'Crimson Text', serif;
+            font-size: 12px;
+            min-width: 0;
+        }
+        .cal-settings select:focus, .cal-settings input:focus { outline: none; border-color: #887750; }
+
+        .cal-agenda {
+            flex: 1;
+            overflow-y: auto;
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px solid #2a2520;
+        }
+        .cal-agenda::-webkit-scrollbar { width: 6px; }
+        .cal-agenda::-webkit-scrollbar-track { background: transparent; }
+        .cal-agenda::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+        .agenda-heading {
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 6px;
+        }
+        .agenda-day {
+            font-size: 12px;
+            color: #887750;
+            font-style: italic;
+            margin: 10px 0 4px;
+        }
+        .agenda-day:first-of-type { margin-top: 0; }
+        .agenda-item {
+            padding: 6px 9px;
+            margin-bottom: 5px;
+            background: #1e1b17;
+            border-radius: 5px;
+            border-left: 3px solid #555;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+        .agenda-item:hover { background: #2a2520; }
+        .agenda-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+        .agenda-district { font-size: 12px; color: #c9b882; }
+        .agenda-item.no-district { cursor: default; }
+        .agenda-item.no-district .agenda-district { color: #887750; font-style: italic; }
+        .agenda-delete {
+            background: none;
+            border: none;
+            color: #444;
+            cursor: pointer;
+            font-size: 13px;
+            padding: 0 0 0 6px;
+            line-height: 1;
+        }
+        .agenda-item:hover .agenda-delete { color: #666; }
+        .agenda-delete:hover { color: #a33 !important; }
+        .agenda-text { font-size: 13px; line-height: 1.4; color: #bbb; margin-top: 2px; }
+
+        .form-hint { font-size: 11px; color: #666; font-style: italic; margin: -4px 0 8px; }
+
+        .timeline-selected {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            background: rgba(201, 184, 130, 0.14);
+            border-left: 1px solid rgba(201, 184, 130, 0.5);
+            border-right: 1px solid rgba(201, 184, 130, 0.5);
+            pointer-events: none;
+        }
+        .timeline-today {
+            position: absolute;
+            top: 0;
+            width: 1px;
+            height: 100%;
+            background: #5f8f8a;
+            pointer-events: none;
+        }
+        .timeline-day-label.tick {
+            transform: none;
+            padding-left: 4px;
+            border-left: 1px solid #333;
+            line-height: 24px;
+        }
+
         /* ── Scrollbar ── */
         .district-card::-webkit-scrollbar { width: 6px; }
         .district-card::-webkit-scrollbar-track { background: transparent; }
@@ -455,6 +711,69 @@
 
 <!-- Main Layout -->
 <div class="app-layout">
+    <!-- Calendar Panel -->
+    <div class="cal-panel" id="calPanel">
+        <div class="cal-inner">
+            <div class="cal-header">
+                <button class="cal-nav" id="calPrev" title="Previous">‹</button>
+                <div class="cal-title" id="calTitle" title="Click to zoom out">
+                    <div class="cal-season" id="calSeason"></div>
+                    <h2 id="calTitleMain"></h2>
+                    <div class="cal-sub" id="calTitleSub"></div>
+                </div>
+                <button class="cal-nav" id="calNext" title="Next">›</button>
+            </div>
+            <div class="cal-grid month" id="calGrid"></div>
+            <div class="cal-actions">
+                <button class="cal-btn" id="calTodayBtn" title="Jump to the current in-game day">Today</button>
+                <button class="cal-btn" id="calClearBtn" title="Stop filtering by day">All days</button>
+                <span style="flex:1"></span>
+                <button class="cal-btn" id="calLogBtn" title="Log an event on the selected day">+ Log</button>
+                <button class="cal-btn" id="calSettingsBtn" title="Calendar settings">⚙</button>
+            </div>
+            <div class="cal-log" id="calLog" style="display:none;">
+                <h4 id="calLogHeading"></h4>
+                <div class="form-row">
+                    <select id="calLogDistrict"></select>
+                </div>
+                <div class="form-row">
+                    <input type="text" id="calLogPlace" placeholder="Where? e.g. aboard the Gull" style="width:62%;">
+                    <select id="calLogTime" style="width:38%;">
+                        <option value="morning">Morning</option>
+                        <option value="midday">Midday</option>
+                        <option value="afternoon">Afternoon</option>
+                        <option value="evening">Evening</option>
+                        <option value="night">Night</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <textarea id="calLogText" placeholder="What happened..."></textarea>
+                </div>
+                <button class="btn-add-event" id="calLogAdd">Add Event</button>
+            </div>
+            <div class="cal-settings" id="calSettings" style="display:none;">
+                <div class="cal-set-row">
+                    <label>Reckoning</label>
+                    <select id="setEra" style="flex:1;"></select>
+                </div>
+                <div class="cal-set-row">
+                    <label>Today</label>
+                    <span class="cal-set-value" id="setTodayLabel"></span>
+                    <button class="cal-btn" id="setTodayBtn" title="Make the selected calendar day the current in-game day">Use selected</button>
+                </div>
+                <div class="cal-set-row">
+                    <label>Campaign began</label>
+                    <select id="setStartMonth" style="flex:1;"></select>
+                    <select id="setStartDay" style="width:44px;"></select>
+                    <input type="number" id="setStartYear" style="width:58px;">
+                </div>
+                <div class="notes-save-hint">Anchors the timeline and the old "Day N" events. Month, day, and reckoning names live in the CAL table at the top of the script.</div>
+            </div>
+            <div class="cal-agenda" id="calAgenda"></div>
+        </div>
+    </div>
+    <button class="cal-toggle" id="calToggle" title="Toggle calendar">◀</button>
+
     <!-- Map -->
     <div class="map-container" id="mapContainer">
         <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 4032 3097.57">
@@ -6670,9 +6989,13 @@
                     <div class="add-event-form">
                         <h4>Log an event</h4>
                         <div class="form-row">
-                            <select id="eventDay" style="width:50%;">
-                            </select>
-                            <select id="eventTime" style="width:50%;">
+                            <select id="eventMonth" style="width:46%;"></select>
+                            <select id="eventDayNum" style="width:22%;"></select>
+                            <input type="number" id="eventYear" style="width:32%;" min="1" title="Year">
+                        </div>
+                        <div class="form-hint" id="eventDateHint"></div>
+                        <div class="form-row">
+                            <select id="eventTime">
                                 <option value="morning">Morning</option>
                                 <option value="midday">Midday</option>
                                 <option value="afternoon">Afternoon</option>
@@ -6898,83 +7221,164 @@
         gm: { name: 'GM', color: '#a33', cssClass: 'gm' }
     };
 
-    // ── Game Calendar ──
-    // ~1 week of in-game time across ~12 sessions
-    const GAME_DAYS = [];
-    const dayNames = ['Moonday', 'Toilday', 'Wealday', 'Oathday', 'Fireday', 'Starday', 'Sunday'];
-    for (let i = 0; i < 10; i++) {
-        GAME_DAYS.push({
-            id: `day-${i+1}`,
-            label: `Day ${i+1} (${dayNames[i % 7]})`,
-            short: `Day ${i+1}`
-        });
+    // ── Seminarian Calendar ──
+    // 16 months of 16 days (a 256-day year), 8-day weeks, two weeks to a month.
+    // Because 16 is a multiple of 8, every month opens on the first day of the week.
+    const CAL = {
+        daysPerMonth: 16,
+        monthsPerYear: 16,
+        daysPerWeek: 8,
+        months: [
+            'Naoweihan', 'Nuweihan', 'Niweihan', 'Nohweihan',   // Winter
+            'Gaoweihan', 'Guweihan', 'Giweihan', 'Gohweihan',   // Spring
+            'Saoweihan', 'Suweihan', 'Siweihan', 'Sohweihan',   // Summer
+            'Waoweihan', 'Wuweihan', 'Wiweihan', 'Wohweihan'    // Fall
+        ],
+        seasons: [
+            { name: 'Winter', color: '#8fa3bf', tint: '#191c22' },
+            { name: 'Spring', color: '#8fbf8f', tint: '#182018' },
+            { name: 'Summer', color: '#d9b26a', tint: '#242019' },
+            { name: 'Fall',   color: '#c98a5a', tint: '#231a15' }
+        ],
+        // Days are named for Aeronian kings. Four of the eight are still unnamed —
+        // fill in `name` on those entries (and reorder freely) once the table decides.
+        weekdays: [
+            { name: 'Saelionday',  abbr: 'Sae' },
+            { name: 'Aurethday',   abbr: 'Aur' },
+            { name: 'Thalieraday', abbr: 'Tha' },
+            { name: 'Maevraday',   abbr: 'Mae' },
+            { name: null, abbr: 'V' },
+            { name: null, abbr: 'VI' },
+            { name: null, abbr: 'VII' },
+            { name: null, abbr: 'VIII' }
+        ],
+        // Year reckonings, abbreviated as on the map's cartouche ("Y.6320 (2262 A.I.C., 190 R.C.)").
+        // `offset` is subtracted from the common count to get that era's year.
+        eras: {
+            common:        { label: 'Common Reckoning',       abbr: '',   offset: 0 },
+            aeronian:      { label: 'Aeronian Imperial',      abbr: 'A.I.C.', offset: 6329 - 2271 },
+            revolutionary: { label: 'Revolutionary (Terran)', abbr: 'R.C.',   offset: 6329 - 199 }
+        },
+        timesOfDay: ['morning', 'midday', 'afternoon', 'evening', 'night']
+    };
+    CAL.daysPerYear = CAL.daysPerMonth * CAL.monthsPerYear;
+    const YEARS_PER_BLOCK = 16;
+    const ORDINALS = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth'];
+
+    // Dates are stored as one integer: days since 1 Naoweihan of year 1 (common reckoning).
+    function toAbs(year, month, day) {
+        return (year - 1) * CAL.daysPerYear + (month - 1) * CAL.daysPerMonth + (day - 1);
     }
+    function fromAbs(abs) {
+        const year = Math.floor(abs / CAL.daysPerYear) + 1;
+        const rem = abs - (year - 1) * CAL.daysPerYear;
+        const month = Math.floor(rem / CAL.daysPerMonth) + 1;
+        const day = rem % CAL.daysPerMonth + 1;
+        return { year, month, day, weekday: (day - 1) % CAL.daysPerWeek, season: Math.floor((month - 1) / 4) };
+    }
+    function monthAbbr(m) { return CAL.months[m - 1].replace(/weihan$/, ''); }
+    function weekdayName(i) { const w = CAL.weekdays[i]; return w.name || `${ORDINALS[i]} Day`; }
+    function eraYear(year, eraKey) { return year - CAL.eras[eraKey].offset; }
+    function formatYear(year, eraKey) {
+        const era = CAL.eras[eraKey];
+        return era.abbr ? `${era.abbr} ${eraYear(year, eraKey)}` : String(eraYear(year, eraKey));
+    }
+    function otherEras(year) {
+        return Object.keys(CAL.eras)
+            .filter(k => k !== DATA.settings.era)
+            .map(k => formatYear(year, k))
+            .join(' · ');
+    }
+    function formatDate(abs) {
+        const d = fromAbs(abs);
+        return `${weekdayName(d.weekday)}, ${d.day} ${CAL.months[d.month - 1]} ${formatYear(d.year, DATA.settings.era)}`;
+    }
+    function formatDateShort(abs) {
+        const d = fromAbs(abs);
+        return `${CAL.weekdays[d.weekday].abbr} ${d.day} ${monthAbbr(d.month)} ${formatYear(d.year, DATA.settings.era)}`;
+    }
+    function yearsBlockStart(year) { return Math.floor((year - 1) / YEARS_PER_BLOCK) * YEARS_PER_BLOCK + 1; }
 
     // ── State ──
     let currentDistrict = null;
     let currentTab = 'events';
-    let timelineFilter = null; // null = show all
+    let selectedDay = null;    // absolute day the app is filtered to, or null for all days
+    let calView = 'month';     // 'month' | 'year' | 'years'
+    let calCursor = 0;         // absolute day anchoring the visible month / year / 16-year block
 
-    // ── Storage helpers ──
+    // ── Storage ──
     const STORAGE_KEY = 'seminarios-explorer';
+    const DEFAULT_START = toAbs(6329, 5, 1);   // 1 Gaoweihan 6329, the first day of spring
+    const DEFAULT_SETTINGS = { era: 'common', campaignStart: DEFAULT_START, today: null };
 
-    function loadData() {
-        try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            return raw ? JSON.parse(raw) : { events: [], notes: {} };
-        } catch { return { events: [], notes: {} }; }
-    }
-
-    function saveData(data) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    }
-
-    function getEvents(districtKey) {
-        const data = loadData();
-        let events = data.events.filter(e => e.district === districtKey);
-        if (timelineFilter !== null) {
-            events = events.filter(e => e.day === timelineFilter);
+    function normalizeData(data, fallbackSettings) {
+        data = data && typeof data === 'object' ? data : {};
+        data.events = Array.isArray(data.events) ? data.events : [];
+        data.notes = data.notes && typeof data.notes === 'object' ? data.notes : {};
+        data.settings = Object.assign({}, DEFAULT_SETTINGS, fallbackSettings || {}, data.settings || {});
+        if (!CAL.eras[data.settings.era]) data.settings.era = 'common';
+        // Migrate "day-N" events from the old ten-day placeholder calendar onto real dates,
+        // counting from the campaign's first day.
+        for (const e of data.events) {
+            if (typeof e.date !== 'number' && typeof e.day === 'string') {
+                const n = parseInt(e.day.split('-')[1], 10);
+                e.date = data.settings.campaignStart + (isNaN(n) ? 0 : n - 1);
+                delete e.day;
+            }
+            if (!CAL.timesOfDay.includes(e.time)) e.time = CAL.timesOfDay[0];
         }
-        return events.sort((a, b) => {
-            const dayA = parseInt(a.day.split('-')[1]);
-            const dayB = parseInt(b.day.split('-')[1]);
-            if (dayA !== dayB) return dayA - dayB;
-            const times = ['morning', 'midday', 'afternoon', 'evening', 'night'];
-            return times.indexOf(a.time) - times.indexOf(b.time);
-        });
+        data.events = data.events.filter(e => typeof e.date === 'number');
+        return data;
     }
+    function loadData() {
+        let raw = null;
+        try { raw = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { /* empty or corrupt */ }
+        return normalizeData(raw);
+    }
+    const DATA = loadData();
+    function persist() { localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA)); }
 
-    function addEvent(districtKey, day, time, text, character) {
-        const data = loadData();
-        data.events.push({
+    function getToday() {
+        if (typeof DATA.settings.today === 'number') return DATA.settings.today;
+        // Until "today" is set explicitly, it floats to the latest logged event.
+        return DATA.events.reduce((m, e) => Math.max(m, e.date), DATA.settings.campaignStart);
+    }
+    function sortEvents(list) {
+        return list.sort((a, b) => a.date - b.date
+            || CAL.timesOfDay.indexOf(a.time) - CAL.timesOfDay.indexOf(b.time)
+            || (a.timestamp || 0) - (b.timestamp || 0));
+    }
+    function eventsInRange(start, end) {
+        return sortEvents(DATA.events.filter(e => e.date >= start && e.date <= end));
+    }
+    function getEvents(districtKey) {
+        let events = DATA.events.filter(e => e.district === districtKey);
+        if (selectedDay !== null) events = events.filter(e => e.date === selectedDay);
+        return sortEvents(events);
+    }
+    // `districtKey` may be null for events that happen outside any district (travel, the open sea);
+    // `place` is optional free text describing where.
+    function addEvent(districtKey, date, time, text, character, place) {
+        DATA.events.push({
             id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-            district: districtKey,
-            day, time, text, character,
+            district: districtKey || null,
+            place: place || undefined,
+            date, time, text, character,
             timestamp: Date.now()
         });
-        saveData(data);
+        persist();
     }
-
+    function eventPlaceLabel(e) {
+        const district = DISTRICTS[e.district];
+        if (district) return e.place ? `${district.name} · ${e.place}` : district.name;
+        return e.place || 'Elsewhere';
+    }
     function deleteEvent(eventId) {
-        const data = loadData();
-        data.events = data.events.filter(e => e.id !== eventId);
-        saveData(data);
+        DATA.events = DATA.events.filter(e => e.id !== eventId);
+        persist();
     }
-
-    function getNotes(districtKey) {
-        const data = loadData();
-        return data.notes[districtKey] || '';
-    }
-
-    function saveNotes(districtKey, text) {
-        const data = loadData();
-        data.notes[districtKey] = text;
-        saveData(data);
-    }
-
-    function getAllEvents() {
-        return loadData().events;
-    }
+    function getNotes(districtKey) { return DATA.notes[districtKey] || ''; }
+    function saveNotes(districtKey, text) { DATA.notes[districtKey] = text; persist(); }
 
     // ── Map Setup ──
     const container = d3.select('#mapContainer');
@@ -7134,16 +7538,16 @@
         const events = getEvents(currentDistrict);
 
         if (events.length === 0) {
-            list.innerHTML = '<div class="no-events">No events logged for this district yet.</div>';
+            list.innerHTML = selectedDay === null
+                ? '<div class="no-events">No events logged for this district yet.</div>'
+                : `<div class="no-events">Nothing logged here on ${escapeHtml(formatDateShort(selectedDay))}.</div>`;
         } else {
             list.innerHTML = events.map(e => {
                 const char = CHARACTERS[e.character] || CHARACTERS.gondgieaux;
-                const dayObj = GAME_DAYS.find(d => d.id === e.day);
-                const dayLabel = dayObj ? dayObj.short : e.day;
                 return `
                     <div class="event-item event-border-${char.cssClass}">
                         <div class="event-header">
-                            <span class="event-date">${dayLabel}, ${e.time}</span>
+                            <span class="event-date" title="${escapeHtml(formatDate(e.date))}">${escapeHtml(formatDateShort(e.date))}, ${e.time}${e.place ? ' · ' + escapeHtml(e.place) : ''}</span>
                             <span>
                                 <span class="event-char char-${char.cssClass}">${char.name}</span>
                                 <button class="event-delete" data-id="${e.id}" title="Delete">&times;</button>
@@ -7160,32 +7564,64 @@
             btn.addEventListener('click', () => {
                 deleteEvent(btn.dataset.id);
                 renderEvents();
+                renderCalendar();
                 renderTimeline();
             });
         });
     }
 
     // ── Add Event ──
-    // Populate day selector
-    const daySelect = document.getElementById('eventDay');
-    GAME_DAYS.forEach(d => {
-        const opt = document.createElement('option');
-        opt.value = d.id;
-        opt.textContent = d.label;
-        daySelect.appendChild(opt);
-    });
+    const evMonth = document.getElementById('eventMonth');
+    const evDay = document.getElementById('eventDayNum');
+    const evYear = document.getElementById('eventYear');
+    const evHint = document.getElementById('eventDateHint');
+
+    function fillMonthSelect(sel) {
+        sel.innerHTML = CAL.months.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('');
+    }
+    function fillDaySelect(sel) {
+        let html = '';
+        for (let d = 1; d <= CAL.daysPerMonth; d++) html += `<option value="${d}">${d}</option>`;
+        sel.innerHTML = html;
+    }
+    // Year inputs are shown in the chosen reckoning; convert back to the common count on read.
+    function readDateFields(monthSel, daySel, yearInput) {
+        const year = (parseInt(yearInput.value, 10) || 0) + CAL.eras[DATA.settings.era].offset;
+        return toAbs(Math.max(1, year), +monthSel.value, +daySel.value);
+    }
+    function writeDateFields(monthSel, daySel, yearInput, abs) {
+        const d = fromAbs(abs);
+        monthSel.value = d.month;
+        daySel.value = d.day;
+        yearInput.value = eraYear(d.year, DATA.settings.era);
+    }
+    fillMonthSelect(evMonth);
+    fillDaySelect(evDay);
+
+    function setFormDate(abs) {
+        writeDateFields(evMonth, evDay, evYear, abs);
+        updateFormHint();
+    }
+    function getFormDate() { return readDateFields(evMonth, evDay, evYear); }
+    function updateFormHint() {
+        const d = fromAbs(getFormDate());
+        const era = CAL.eras[DATA.settings.era];
+        evHint.textContent = `${weekdayName(d.weekday)} · ${era.abbr ? era.label + ' · ' : ''}${otherEras(d.year)}`;
+    }
+    [evMonth, evDay, evYear].forEach(el => el.addEventListener('input', updateFormHint));
 
     document.getElementById('addEventBtn').addEventListener('click', () => {
         const text = document.getElementById('eventText').value.trim();
         if (!text || !currentDistrict) return;
 
-        const day = document.getElementById('eventDay').value;
+        const date = getFormDate();
         const time = document.getElementById('eventTime').value;
         const character = document.getElementById('charSelect').value;
 
-        addEvent(currentDistrict, day, time, text, character);
+        addEvent(currentDistrict, date, time, text, character);
         document.getElementById('eventText').value = '';
         renderEvents();
+        renderCalendar();
         renderTimeline();
     });
 
@@ -7221,62 +7657,410 @@
         toggle.style.right = collapsed ? '0' : '380px';
     });
 
+    // ── Calendar Panel ──
+    const calGrid = document.getElementById('calGrid');
+    const calAgenda = document.getElementById('calAgenda');
+
+    function toggleCalPanel(force) {
+        const panel = document.getElementById('calPanel');
+        const btn = document.getElementById('calToggle');
+        const collapsed = typeof force === 'boolean' ? force : !panel.classList.contains('collapsed');
+        panel.classList.toggle('collapsed', collapsed);
+        btn.classList.toggle('collapsed', collapsed);
+        btn.textContent = collapsed ? '▶' : '◀';
+    }
+    document.getElementById('calToggle').addEventListener('click', () => toggleCalPanel());
+
+    // Absolute day range currently shown in the grid
+    function calRange() {
+        const d = fromAbs(calCursor);
+        if (calView === 'month') {
+            const s = toAbs(d.year, d.month, 1);
+            return [s, s + CAL.daysPerMonth - 1];
+        }
+        if (calView === 'year') {
+            const s = toAbs(d.year, 1, 1);
+            return [s, s + CAL.daysPerYear - 1];
+        }
+        const y0 = yearsBlockStart(d.year);
+        return [toAbs(y0, 1, 1), toAbs(y0 + YEARS_PER_BLOCK, 1, 1) - 1];
+    }
+
+    function selectDay(abs) {
+        selectedDay = abs;
+        if (abs !== null) {
+            calCursor = abs;
+            calView = 'month';
+            setFormDate(abs);
+        }
+        document.getElementById('timelineCurrent').textContent = abs === null ? 'All Days' : formatDateShort(abs);
+        renderCalendar();
+        renderTimeline();
+        renderCurrentTab();
+    }
+
+    function calStep(dir) {
+        // Months and years are uniform, so stepping is plain arithmetic.
+        const unit = calView === 'month' ? CAL.daysPerMonth
+                   : calView === 'year' ? CAL.daysPerYear
+                   : CAL.daysPerYear * YEARS_PER_BLOCK;
+        const next = calCursor + dir * unit;
+        if (next < 0) return;
+        calCursor = next;
+        renderCalendar();
+    }
+    document.getElementById('calPrev').addEventListener('click', () => calStep(-1));
+    document.getElementById('calNext').addEventListener('click', () => calStep(1));
+    document.getElementById('calTitle').addEventListener('click', () => {
+        if (calView === 'month') calView = 'year';
+        else if (calView === 'year') calView = 'years';
+        else return;
+        renderCalendar();
+    });
+    document.getElementById('calTodayBtn').addEventListener('click', () => {
+        calCursor = getToday();
+        calView = 'month';
+        renderCalendar();
+    });
+    document.getElementById('calClearBtn').addEventListener('click', () => selectDay(null));
+
+    function dotsHtml(evs) {
+        if (!evs.length) return '<span class="cal-dots"></span>';
+        if (evs.length > 4) return `<span class="cal-count">${evs.length}</span>`;
+        return '<span class="cal-dots">' + evs.map(e => {
+            const char = CHARACTERS[e.character] || CHARACTERS.gondgieaux;
+            return `<span class="cal-dot" style="background:${char.color}"></span>`;
+        }).join('') + '</span>';
+    }
+
+    function renderCalendar() {
+        const d = fromAbs(calCursor);
+        const era = DATA.settings.era;
+        const today = getToday();
+        const [rs, re] = calRange();
+        const events = eventsInRange(rs, re);
+
+        // Title
+        const titleEl = document.getElementById('calTitle');
+        const seasonEl = document.getElementById('calSeason');
+        const mainEl = document.getElementById('calTitleMain');
+        const subEl = document.getElementById('calTitleSub');
+        titleEl.classList.toggle('top', calView === 'years');
+        titleEl.title = calView === 'years' ? '' : 'Click to zoom out';
+        if (calView === 'month') {
+            const s = CAL.seasons[d.season];
+            seasonEl.textContent = s.name;
+            seasonEl.style.color = s.color;
+            mainEl.textContent = `${CAL.months[d.month - 1]} ${formatYear(d.year, era)}`;
+            subEl.textContent = otherEras(d.year);
+        } else if (calView === 'year') {
+            seasonEl.textContent = CAL.eras[era].label;
+            seasonEl.style.color = '';
+            mainEl.textContent = formatYear(d.year, era);
+            subEl.textContent = otherEras(d.year);
+        } else {
+            const y0 = yearsBlockStart(d.year);
+            seasonEl.textContent = CAL.eras[era].label;
+            seasonEl.style.color = '';
+            mainEl.textContent = `${formatYear(y0, era)} – ${formatYear(y0 + YEARS_PER_BLOCK - 1, era)}`;
+            subEl.textContent = `${otherEras(y0)} …`;
+        }
+
+        // Grid
+        calGrid.className = 'cal-grid ' + calView;
+        calGrid.innerHTML = '';
+        if (calView === 'month') {
+            CAL.weekdays.forEach((w, i) => {
+                const h = document.createElement('div');
+                h.className = 'cal-wd' + (w.name ? '' : ' unnamed');
+                h.textContent = w.abbr;
+                h.title = w.name || `${weekdayName(i)} (unnamed)`;
+                calGrid.appendChild(h);
+            });
+            for (let day = 1; day <= CAL.daysPerMonth; day++) {
+                const abs = toAbs(d.year, d.month, day);
+                const dayEvents = events.filter(e => e.date === abs);
+                const cell = document.createElement('div');
+                cell.className = 'cal-cell day'
+                    + (abs === selectedDay ? ' selected' : '')
+                    + (abs === today ? ' today' : '')
+                    + (abs > today ? ' future' : '');
+                cell.innerHTML = `<span class="cal-num">${day}</span>${dotsHtml(dayEvents)}`;
+                cell.title = formatDate(abs)
+                    + (abs === today ? ' (today)' : '')
+                    + (dayEvents.length ? ` — ${dayEvents.length} event${dayEvents.length !== 1 ? 's' : ''}` : '');
+                cell.addEventListener('click', () => selectDay(abs === selectedDay ? null : abs));
+                calGrid.appendChild(cell);
+            }
+        } else if (calView === 'year') {
+            for (let m = 1; m <= CAL.monthsPerYear; m++) {
+                const s = toAbs(d.year, m, 1), e = s + CAL.daysPerMonth - 1;
+                const count = events.filter(ev => ev.date >= s && ev.date <= e).length;
+                const season = CAL.seasons[Math.floor((m - 1) / 4)];
+                const cell = document.createElement('div');
+                cell.className = 'cal-cell month'
+                    + (today >= s && today <= e ? ' today' : '')
+                    + (selectedDay !== null && selectedDay >= s && selectedDay <= e ? ' selected' : '')
+                    + (s > today ? ' future' : '');
+                cell.style.background = season.tint;
+                cell.innerHTML = `<span class="cal-name">${CAL.months[m - 1]}</span><span class="cal-count">${count || ''}</span>`;
+                cell.title = `${CAL.months[m - 1]} · ${season.name}`;
+                cell.addEventListener('click', () => { calCursor = s; calView = 'month'; renderCalendar(); });
+                calGrid.appendChild(cell);
+            }
+        } else {
+            const y0 = yearsBlockStart(d.year);
+            for (let y = y0; y < y0 + YEARS_PER_BLOCK; y++) {
+                const s = toAbs(y, 1, 1), e = s + CAL.daysPerYear - 1;
+                const count = events.filter(ev => ev.date >= s && ev.date <= e).length;
+                const cell = document.createElement('div');
+                cell.className = 'cal-cell year'
+                    + (today >= s && today <= e ? ' today' : '')
+                    + (selectedDay !== null && selectedDay >= s && selectedDay <= e ? ' selected' : '')
+                    + (s > today ? ' future' : '');
+                cell.innerHTML = `<span class="cal-name">${formatYear(y, era)}</span><span class="cal-count">${count || ''}</span>`;
+                cell.title = otherEras(y);
+                cell.addEventListener('click', () => { calCursor = s; calView = 'year'; renderCalendar(); });
+                calGrid.appendChild(cell);
+            }
+        }
+
+        renderAgenda(events);
+        renderSettings();
+        renderLogForm();
+    }
+
+    function renderAgenda(rangeEvents) {
+        let list, heading;
+        if (selectedDay !== null) {
+            list = eventsInRange(selectedDay, selectedDay);
+            heading = formatDate(selectedDay);
+        } else {
+            list = rangeEvents;
+            heading = { month: 'This month', year: 'This year', years: 'These years' }[calView];
+        }
+
+        let html = `<div class="agenda-heading">${escapeHtml(heading)}</div>`;
+        if (!list.length) {
+            html += `<div class="no-events">Nothing logged.${selectedDay !== null ? ' Use “+ Log” to add something here.' : ''}</div>`;
+        } else {
+            let lastDate = null;
+            for (const e of list) {
+                if (selectedDay === null && e.date !== lastDate) {
+                    html += `<div class="agenda-day">${escapeHtml(formatDate(e.date))}</div>`;
+                    lastDate = e.date;
+                }
+                const char = CHARACTERS[e.character] || CHARACTERS.gondgieaux;
+                const inDistrict = !!DISTRICTS[e.district];
+                html += `
+                    <div class="agenda-item event-border-${char.cssClass}${inDistrict ? '' : ' no-district'}" data-district="${e.district || ''}" title="${char.name}${inDistrict ? ' · show on map' : ''}">
+                        <div class="agenda-head">
+                            <span class="agenda-district">${escapeHtml(eventPlaceLabel(e))}</span>
+                            <span class="event-date">${e.time}<button class="agenda-delete" data-id="${e.id}" title="Delete">&times;</button></span>
+                        </div>
+                        <div class="agenda-text">${escapeHtml(e.text)}</div>
+                    </div>`;
+            }
+        }
+        calAgenda.innerHTML = html;
+        calAgenda.querySelectorAll('.agenda-item').forEach(el => {
+            el.addEventListener('click', () => {
+                if (DISTRICTS[el.dataset.district]) selectDistrict(el.dataset.district);
+            });
+        });
+        calAgenda.querySelectorAll('.agenda-delete').forEach(btn => {
+            btn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                deleteEvent(btn.dataset.id);
+                renderCalendar();
+                renderTimeline();
+                renderCurrentTab();
+            });
+        });
+    }
+
+    // ── Log from the calendar (district optional) ──
+    const calLogDistrict = document.getElementById('calLogDistrict');
+    calLogDistrict.innerHTML = '<option value="">Elsewhere — no district</option>'
+        + Object.entries(DISTRICTS).map(([k, d]) => `<option value="${k}">${d.name}</option>`).join('');
+
+    document.getElementById('calLogBtn').addEventListener('click', () => {
+        const box = document.getElementById('calLog');
+        const open = box.style.display === 'none';
+        box.style.display = open ? 'block' : 'none';
+        document.getElementById('calLogBtn').classList.toggle('active', open);
+        if (open) {
+            renderLogForm();
+            if (selectedDay !== null) document.getElementById('calLogText').focus();
+        }
+    });
+
+    function renderLogForm() {
+        const heading = document.getElementById('calLogHeading');
+        const canLog = selectedDay !== null;
+        heading.innerHTML = canLog
+            ? `Log on <span>${escapeHtml(formatDateShort(selectedDay))}</span>`
+            : 'Select a day above to log an event';
+        document.getElementById('calLogAdd').disabled = !canLog;
+        if (currentDistrict && !calLogDistrict.dataset.touched) calLogDistrict.value = currentDistrict;
+    }
+    calLogDistrict.addEventListener('change', () => { calLogDistrict.dataset.touched = '1'; });
+
+    document.getElementById('calLogAdd').addEventListener('click', () => {
+        const text = document.getElementById('calLogText').value.trim();
+        if (!text || selectedDay === null) return;
+        const district = calLogDistrict.value || null;
+        const place = document.getElementById('calLogPlace').value.trim();
+        const time = document.getElementById('calLogTime').value;
+        const character = document.getElementById('charSelect').value;
+        addEvent(district, selectedDay, time, text, character, place);
+        document.getElementById('calLogText').value = '';
+        document.getElementById('calLogPlace').value = '';
+        renderCalendar();
+        renderTimeline();
+        renderCurrentTab();
+    });
+
+    // ── Calendar Settings ──
+    const setEra = document.getElementById('setEra');
+    const setStartMonth = document.getElementById('setStartMonth');
+    const setStartDay = document.getElementById('setStartDay');
+    const setStartYear = document.getElementById('setStartYear');
+    setEra.innerHTML = Object.entries(CAL.eras)
+        .map(([k, e]) => `<option value="${k}">${e.label}</option>`).join('');
+    fillMonthSelect(setStartMonth);
+    fillDaySelect(setStartDay);
+
+    document.getElementById('calSettingsBtn').addEventListener('click', () => {
+        const box = document.getElementById('calSettings');
+        const open = box.style.display === 'none';
+        box.style.display = open ? 'block' : 'none';
+        document.getElementById('calSettingsBtn').classList.toggle('active', open);
+    });
+
+    function renderSettings() {
+        const s = DATA.settings;
+        setEra.value = s.era;
+        document.getElementById('setTodayLabel').textContent =
+            formatDateShort(getToday()) + (typeof s.today === 'number' ? '' : ' (auto)');
+        document.getElementById('setTodayBtn').disabled = selectedDay === null || selectedDay === s.today;
+        if (document.activeElement !== setStartYear) {
+            writeDateFields(setStartMonth, setStartDay, setStartYear, s.campaignStart);
+        }
+    }
+
+    setEra.addEventListener('change', () => {
+        const formAbs = getFormDate();
+        DATA.settings.era = setEra.value;
+        persist();
+        setFormDate(formAbs);
+        if (selectedDay !== null) document.getElementById('timelineCurrent').textContent = formatDateShort(selectedDay);
+        renderCalendar();
+        renderTimeline();
+        renderCurrentTab();
+    });
+    document.getElementById('setTodayBtn').addEventListener('click', () => {
+        if (selectedDay === null) return;
+        DATA.settings.today = selectedDay;
+        persist();
+        renderCalendar();
+        renderTimeline();
+    });
+    [setStartMonth, setStartDay, setStartYear].forEach(el => el.addEventListener('change', () => {
+        DATA.settings.campaignStart = readDateFields(setStartMonth, setStartDay, setStartYear);
+        persist();
+        renderCalendar();
+        renderTimeline();
+    }));
+
     // ── Timeline ──
+    // Spans from the campaign's first day (or earliest event) to today (or latest event).
+    function timelineRange() {
+        let start = DATA.settings.campaignStart;
+        let end = getToday();
+        for (const e of DATA.events) {
+            start = Math.min(start, e.date);
+            end = Math.max(end, e.date);
+        }
+        end = Math.max(end, start + 9);
+        return [start, end];
+    }
+
     function renderTimeline() {
         const track = document.getElementById('timelineTrack');
         const dayLabels = document.getElementById('timelineDayLabels');
-        const allEvents = getAllEvents();
+        const [start, end] = timelineRange();
+        const n = end - start + 1;
+        const today = getToday();
+        const era = DATA.settings.era;
 
-        // Clear
-        track.querySelectorAll('.timeline-marker').forEach(m => m.remove());
+        track.querySelectorAll('.timeline-marker, .timeline-selected, .timeline-today').forEach(m => m.remove());
         dayLabels.innerHTML = '';
 
-        // Day labels
-        GAME_DAYS.forEach((day, i) => {
-            const pct = ((i + 0.5) / GAME_DAYS.length) * 100;
+        // Pick a label step so roughly a dozen labels fit, snapping to month starts once days get dense.
+        const step = n <= 12 ? 1 : n <= 24 ? 2 : n <= 48 ? 4 : n <= 96 ? 8
+                   : Math.ceil(n / 12 / CAL.daysPerMonth) * CAL.daysPerMonth;
+        const ticks = [];
+        if (step < CAL.daysPerMonth) {
+            for (let i = 0; i < n; i += step) ticks.push(start + i);
+        } else {
+            const every = step / CAL.daysPerMonth;
+            const sd = fromAbs(start);
+            for (let abs = toAbs(sd.year, sd.month, 1); abs <= end; abs += CAL.daysPerMonth) {
+                const d = fromAbs(abs);
+                if (abs >= start && ((d.year - 1) * CAL.monthsPerYear + d.month - 1) % every === 0) ticks.push(abs);
+            }
+        }
+        ticks.forEach(abs => {
+            const d = fromAbs(abs);
             const label = document.createElement('span');
-            label.className = 'timeline-day-label';
-            label.style.left = pct + '%';
-            label.textContent = day.short;
+            label.className = 'timeline-day-label' + (step === 1 ? '' : ' tick');
+            label.style.left = ((abs - start + (step === 1 ? 0.5 : 0)) / n * 100) + '%';
+            label.textContent = step >= CAL.daysPerMonth
+                ? `${monthAbbr(d.month)} ${eraYear(d.year, era)}`
+                : `${d.day} ${monthAbbr(d.month)}`;
+            label.title = formatDate(abs);
             dayLabels.appendChild(label);
         });
 
-        // Event markers
-        allEvents.forEach(e => {
-            const dayIdx = GAME_DAYS.findIndex(d => d.id === e.day);
-            if (dayIdx === -1) return;
-            const times = ['morning', 'midday', 'afternoon', 'evening', 'night'];
-            const timeIdx = times.indexOf(e.time);
-            const pct = ((dayIdx + (timeIdx + 0.5) / times.length) / GAME_DAYS.length) * 100;
+        // Selected day band and today line
+        if (selectedDay !== null && selectedDay >= start && selectedDay <= end) {
+            const band = document.createElement('div');
+            band.className = 'timeline-selected';
+            band.style.left = ((selectedDay - start) / n * 100) + '%';
+            band.style.width = (100 / n) + '%';
+            track.appendChild(band);
+        }
+        if (today >= start && today <= end) {
+            const line = document.createElement('div');
+            line.className = 'timeline-today';
+            line.style.left = `calc(${(today - start + 1) / n * 100}% - 1px)`;
+            line.title = 'Today: ' + formatDate(today);
+            track.appendChild(line);
+        }
 
+        // Event markers
+        DATA.events.forEach(e => {
+            if (e.date < start || e.date > end) return;
+            const timeIdx = Math.max(0, CAL.timesOfDay.indexOf(e.time));
+            const pct = (e.date - start + (timeIdx + 0.5) / CAL.timesOfDay.length) / n * 100;
             const marker = document.createElement('div');
             marker.className = 'timeline-marker';
             const char = CHARACTERS[e.character] || CHARACTERS.gondgieaux;
             marker.style.background = char.color;
             marker.style.left = `calc(${pct}% - 4px)`;
-            marker.title = `${char.name}: ${e.text.slice(0, 50)}`;
+            marker.title = `${char.name} · ${formatDateShort(e.date)} · ${eventPlaceLabel(e)}: ${e.text.slice(0, 50)}`;
             track.appendChild(marker);
         });
 
-        // Click on track to filter by day
+        // Click on track to select a day
         track.onclick = function(event) {
             const rect = track.getBoundingClientRect();
-            const x = event.clientX - rect.left;
-            const pct = x / rect.width;
-            const dayIdx = Math.floor(pct * GAME_DAYS.length);
-
-            if (dayIdx >= 0 && dayIdx < GAME_DAYS.length) {
-                const clickedDay = GAME_DAYS[dayIdx].id;
-                if (timelineFilter === clickedDay) {
-                    // Toggle off
-                    timelineFilter = null;
-                    document.getElementById('timelineCurrent').textContent = 'All Days';
-                } else {
-                    timelineFilter = clickedDay;
-                    document.getElementById('timelineCurrent').textContent = GAME_DAYS[dayIdx].label;
-                }
-                renderCurrentTab();
-            }
+            const pct = (event.clientX - rect.left) / rect.width;
+            const dayIdx = Math.floor(pct * n);
+            if (dayIdx < 0 || dayIdx >= n) return;
+            const abs = start + dayIdx;
+            selectDay(abs === selectedDay ? null : abs);
         };
     }
 
@@ -7294,13 +8078,15 @@
 
     // ── Export / Import ──
     document.getElementById('exportBtn').addEventListener('click', () => {
-        const data = loadData();
-        data._meta = {
-            exported: new Date().toISOString(),
-            character: document.getElementById('charSelect').value,
-            eventCount: data.events.length,
-            notesCount: Object.keys(data.notes).length
-        };
+        const data = Object.assign({}, DATA, {
+            _meta: {
+                exported: new Date().toISOString(),
+                character: document.getElementById('charSelect').value,
+                eventCount: DATA.events.length,
+                notesCount: Object.keys(DATA.notes).length,
+                calendar: { daysPerMonth: CAL.daysPerMonth, monthsPerYear: CAL.monthsPerYear, epoch: '1 Naoweihan, year 1 (common reckoning)' }
+            }
+        });
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -7320,28 +8106,30 @@
         const reader = new FileReader();
         reader.onload = (evt) => {
             try {
-                const incoming = JSON.parse(evt.target.result);
-                if (!incoming.events || !incoming.notes) {
+                const raw = JSON.parse(evt.target.result);
+                if (!raw || !raw.events || !raw.notes) {
                     alert('Invalid file format — expected Seminarios Explorer JSON.');
                     return;
                 }
-                const current = loadData();
+                // Legacy "day-N" files are dated against this browser's campaign start.
+                const incoming = normalizeData(raw, DATA.settings);
                 // Merge events: add any with IDs we don't already have
-                const existingIds = new Set(current.events.map(e => e.id));
+                const existingIds = new Set(DATA.events.map(ev => ev.id));
                 let added = 0;
                 for (const ev of incoming.events) {
                     if (!existingIds.has(ev.id)) {
-                        current.events.push(ev);
+                        DATA.events.push(ev);
                         added++;
                     }
                 }
                 // Merge notes: incoming overwrites only if current is empty for that district
                 for (const [district, note] of Object.entries(incoming.notes)) {
-                    if (!current.notes[district] && note) {
-                        current.notes[district] = note;
+                    if (!DATA.notes[district] && note) {
+                        DATA.notes[district] = note;
                     }
                 }
-                saveData(current);
+                persist();
+                renderCalendar();
                 renderTimeline();
                 if (currentDistrict) renderCurrentTab();
                 alert(`Imported! ${added} new event${added !== 1 ? 's' : ''} merged.`);
@@ -7354,6 +8142,11 @@
     });
 
     // ── Init ──
+    persist();                       // write back any migrated legacy events
+    calCursor = getToday();
+    setFormDate(getToday());
+    if (window.innerWidth < 1100) toggleCalPanel(true);
+    renderCalendar();
     renderTimeline();
     console.log('Seminarios Explorer initialized!');
 })();
