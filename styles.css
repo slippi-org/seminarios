@@ -1,0 +1,671 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    background: #1a1a1a;
+    color: #e8dcc8;
+    font-family: 'Crimson Text', Georgia, serif;
+    overflow: hidden;
+    height: 100vh;
+}
+
+/* ── Top Bar ── */
+.top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 16px;
+    background: #111;
+    border-bottom: 1px solid #333;
+    z-index: 100;
+    position: relative;
+    height: 42px;
+}
+.top-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.top-bar-left img { width: 22px; height: 22px; }
+.top-bar-left h1 {
+    font-family: 'IM Fell English', serif;
+    font-size: 16px;
+    color: #c9b882;
+    font-weight: normal;
+}
+.top-bar-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.top-bar a {
+    color: #887750;
+    text-decoration: none;
+    font-size: 13px;
+}
+.top-bar a:hover { color: #c9b882; }
+
+/* ── Character Selector ── */
+.char-selector {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+}
+.char-selector label { color: #887750; }
+.char-selector select {
+    background: #222;
+    color: #c9b882;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-family: 'Crimson Text', serif;
+    font-size: 13px;
+}
+
+/* ── Main Layout ── */
+.app-layout {
+    display: flex;
+    height: calc(100vh - 42px - 48px);   /* top bar + timeline bar */
+}
+
+/* ── Map Container ── */
+.map-container {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    cursor: grab;
+    background: #1a1a1a;
+}
+.map-container:active { cursor: grabbing; }
+.map-container svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* ── District highlight on hover ── */
+.district-hover {
+    filter: brightness(1.3) saturate(1.2);
+    transition: filter 0.15s;
+}
+
+/* ── Tooltip ── */
+.map-tooltip {
+    position: fixed;
+    padding: 6px 10px;
+    background: rgba(20, 18, 14, 0.92);
+    color: #e8dcc8;
+    border: 1px solid #555;
+    border-radius: 4px;
+    font-size: 14px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 500;
+    max-width: 220px;
+    font-family: 'Crimson Text', serif;
+}
+.map-tooltip.visible { opacity: 1; }
+
+/* ── Side Panel ── */
+.side-panel {
+    width: 380px;
+    background: #151310;
+    border-left: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: width 0.3s;
+}
+.side-panel.collapsed { width: 0; border-left: none; }
+
+.panel-toggle {
+    position: absolute;
+    right: 380px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 200;
+    background: #222;
+    border: 1px solid #444;
+    border-right: none;
+    color: #887750;
+    padding: 12px 4px;
+    cursor: pointer;
+    border-radius: 4px 0 0 4px;
+    font-size: 16px;
+    transition: right 0.3s;
+}
+.panel-toggle:hover { color: #c9b882; background: #2a2520; }
+.panel-toggle.collapsed { right: 0; }
+
+/* ── District Card ── */
+.district-card {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+}
+.district-card h2 {
+    font-family: 'IM Fell English', serif;
+    font-size: 24px;
+    color: #c9b882;
+    margin-bottom: 4px;
+}
+.district-number {
+    color: #666;
+    font-size: 13px;
+    font-style: italic;
+    margin-bottom: 12px;
+}
+.district-desc {
+    font-size: 15px;
+    line-height: 1.55;
+    color: #bbb;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #2a2520;
+}
+
+/* ── Tabs ── */
+.card-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 14px;
+    border-bottom: 1px solid #333;
+}
+.card-tab {
+    padding: 6px 14px;
+    font-size: 13px;
+    color: #777;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+    font-family: 'Crimson Text', serif;
+    background: none;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+}
+.card-tab:hover { color: #bbb; }
+.card-tab.active {
+    color: #c9b882;
+    border-bottom-color: #c9b882;
+}
+
+/* ── Events List ── */
+.events-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.event-item {
+    padding: 10px 12px;
+    background: #1e1b17;
+    border-radius: 6px;
+    border-left: 3px solid #555;
+}
+.event-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+.event-date {
+    font-size: 12px;
+    color: #887750;
+    font-style: italic;
+}
+.event-char {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 10px;
+    color: #1a1a1a;
+    font-weight: 600;
+}
+.event-text {
+    font-size: 14px;
+    line-height: 1.45;
+    color: #ccc;
+}
+.event-delete {
+    background: none;
+    border: none;
+    color: #555;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 0 4px;
+    margin-left: 6px;
+}
+.event-delete:hover { color: #a33; }
+
+.no-events {
+    color: #555;
+    font-style: italic;
+    font-size: 14px;
+    padding: 8px 0;
+}
+
+/* ── Add Event Form ── */
+.add-event-form {
+    margin-top: 12px;
+    padding: 12px;
+    background: #1e1b17;
+    border-radius: 6px;
+    border: 1px solid #2a2520;
+}
+.add-event-form h4 {
+    font-size: 13px;
+    color: #887750;
+    margin-bottom: 8px;
+    font-weight: normal;
+}
+.form-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.form-row input, .form-row select, .form-row textarea {
+    background: #222;
+    color: #e8dcc8;
+    border: 1px solid #3a3530;
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-family: 'Crimson Text', serif;
+    font-size: 14px;
+    width: 100%;
+}
+.form-row textarea {
+    resize: vertical;
+    min-height: 50px;
+}
+.form-row input:focus, .form-row select:focus, .form-row textarea:focus {
+    outline: none;
+    border-color: #887750;
+}
+.btn-add-event {
+    background: #2a2520;
+    color: #c9b882;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 5px 14px;
+    cursor: pointer;
+    font-family: 'Crimson Text', serif;
+    font-size: 14px;
+}
+.btn-add-event:hover { background: #3a3020; border-color: #887750; }
+
+/* ── Notes Tab ── */
+.notes-area textarea {
+    width: 100%;
+    min-height: 120px;
+    background: #1e1b17;
+    color: #ccc;
+    border: 1px solid #2a2520;
+    border-radius: 6px;
+    padding: 10px;
+    font-family: 'Crimson Text', serif;
+    font-size: 14px;
+    resize: vertical;
+}
+.notes-area textarea:focus {
+    outline: none;
+    border-color: #887750;
+}
+.notes-save-hint {
+    font-size: 11px;
+    color: #555;
+    margin-top: 4px;
+    font-style: italic;
+}
+
+/* ── Timeline Bar ── */
+.timeline-bar {
+    height: 48px;
+    background: #111;
+    border-top: 1px solid #333;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 12px;
+    position: relative;
+}
+.timeline-label {
+    font-size: 12px;
+    color: #666;
+    white-space: nowrap;
+}
+.timeline-track {
+    flex: 1;
+    height: 24px;
+    background: #1a1a1a;
+    border-radius: 4px;
+    position: relative;
+    cursor: pointer;
+    overflow: hidden;
+}
+.timeline-marker {
+    position: absolute;
+    width: 8px;
+    height: 100%;
+    border-radius: 2px;
+    opacity: 0.7;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+.timeline-marker:hover { opacity: 1; }
+.timeline-day-labels {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    pointer-events: none;
+}
+.timeline-day-label {
+    position: absolute;
+    font-size: 10px;
+    color: #555;
+    transform: translateX(-50%);
+}
+.timeline-current {
+    font-size: 12px;
+    color: #c9b882;
+    white-space: nowrap;
+    min-width: 80px;
+    text-align: right;
+}
+
+/* ── Empty State ── */
+.empty-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #444;
+    text-align: center;
+    padding: 40px;
+}
+.empty-panel h3 {
+    font-family: 'IM Fell English', serif;
+    font-size: 20px;
+    color: #555;
+    margin-bottom: 8px;
+}
+.empty-panel p {
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* ── Character Colors ── */
+.char-gondgieaux { background: #c9b882; }
+.char-xghchli { background: #7ca7bf; }
+.char-gm { background: #a33; }
+.char-default { background: #888; }
+
+.event-border-gondgieaux { border-left-color: #c9b882; }
+.event-border-xghchli { border-left-color: #7ca7bf; }
+.event-border-gm { border-left-color: #a33; }
+.event-border-default { border-left-color: #888; }
+
+/* ── Calendar Panel ── */
+.cal-panel {
+    width: 336px;
+    flex-shrink: 0;
+    background: #151310;
+    border-right: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: width 0.3s;
+}
+.cal-panel.collapsed { width: 0; border-right: none; }
+.cal-toggle {
+    position: absolute;
+    left: 336px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 200;
+    background: #222;
+    border: 1px solid #444;
+    border-left: none;
+    color: #887750;
+    padding: 12px 4px;
+    cursor: pointer;
+    border-radius: 0 4px 4px 0;
+    font-size: 16px;
+    transition: left 0.3s;
+}
+.cal-toggle:hover { color: #c9b882; background: #2a2520; }
+.cal-toggle.collapsed { left: 0; }
+.cal-inner {
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-width: 336px;
+    overflow: hidden;
+}
+.cal-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+.cal-nav {
+    background: none;
+    border: 1px solid #333;
+    color: #887750;
+    border-radius: 4px;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+.cal-nav:hover { color: #c9b882; border-color: #887750; }
+.cal-title { flex: 1; text-align: center; cursor: pointer; min-width: 0; }
+.cal-title.top { cursor: default; }
+.cal-season {
+    font-size: 10px;
+    color: #887750;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    height: 13px;
+}
+.cal-title h2 {
+    font-family: 'IM Fell English', serif;
+    font-size: 19px;
+    color: #c9b882;
+    font-weight: normal;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cal-title:not(.top):hover h2 { color: #e8dcc8; }
+.cal-sub { font-size: 11px; color: #666; font-style: italic; height: 14px; }
+
+.cal-grid { display: grid; gap: 3px; }
+.cal-grid.month { grid-template-columns: repeat(8, 1fr); }
+.cal-grid.year, .cal-grid.years { grid-template-columns: repeat(4, 1fr); }
+.cal-wd {
+    font-size: 9px;
+    color: #777;
+    text-align: center;
+    padding: 2px 0 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    overflow: hidden;
+}
+.cal-wd.unnamed { color: #4a4a4a; font-style: italic; }
+.cal-cell {
+    background: #1e1b17;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: center;
+    color: #bbb;
+    font-size: 13px;
+    transition: background 0.1s, border-color 0.1s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 0;
+}
+.cal-cell:hover { background: #2a2520; color: #e8dcc8; }
+.cal-cell.day { aspect-ratio: 1; }
+.cal-cell.month, .cal-cell.year { padding: 9px 3px; }
+.cal-cell.future { color: #666; }
+.cal-cell.future .cal-dot { opacity: 0.55; }
+.cal-cell.today { box-shadow: inset 0 0 0 1px #5f8f8a; }
+.cal-cell.selected { border-color: #c9b882; color: #e8dcc8; background: #2a2520; }
+.cal-cell .cal-name {
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+.cal-cell .cal-count { font-size: 10px; color: #887750; line-height: 1; min-height: 10px; }
+.cal-dots { display: flex; gap: 2px; height: 4px; }
+.cal-dot { width: 4px; height: 4px; border-radius: 50%; }
+
+.cal-actions { display: flex; gap: 6px; align-items: center; margin-top: 10px; }
+.cal-btn {
+    background: #222;
+    color: #887750;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 2px 9px;
+    cursor: pointer;
+    font-family: 'Crimson Text', serif;
+    font-size: 12px;
+}
+.cal-btn:hover:not(:disabled) { color: #c9b882; border-color: #887750; }
+.cal-btn:disabled { opacity: 0.4; cursor: default; }
+.cal-btn.active { color: #c9b882; border-color: #887750; background: #2a2520; }
+
+.cal-log {
+    margin-top: 10px;
+    padding: 10px;
+    background: #1e1b17;
+    border: 1px solid #2a2520;
+    border-radius: 6px;
+}
+.cal-log h4 { font-size: 13px; color: #887750; margin-bottom: 8px; font-weight: normal; }
+.cal-log h4 span { color: #c9b882; }
+.cal-log .form-row { margin-bottom: 6px; }
+.cal-log .form-row input, .cal-log .form-row select, .cal-log .form-row textarea { font-size: 13px; padding: 4px 7px; }
+.cal-log .form-row textarea { min-height: 42px; }
+.cal-log .btn-add-event:disabled { opacity: 0.4; cursor: default; }
+
+.cal-settings {
+    margin-top: 10px;
+    padding: 10px;
+    background: #1e1b17;
+    border: 1px solid #2a2520;
+    border-radius: 6px;
+    font-size: 12px;
+}
+.cal-set-row { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; }
+.cal-set-row:last-child { margin-bottom: 0; }
+.cal-set-row label { color: #887750; width: 76px; flex-shrink: 0; }
+.cal-set-row .cal-set-value { color: #ccc; flex: 1; }
+.cal-settings select, .cal-settings input {
+    background: #222;
+    color: #e8dcc8;
+    border: 1px solid #3a3530;
+    border-radius: 4px;
+    padding: 2px 5px;
+    font-family: 'Crimson Text', serif;
+    font-size: 12px;
+    min-width: 0;
+}
+.cal-settings select:focus, .cal-settings input:focus { outline: none; border-color: #887750; }
+
+.cal-agenda {
+    flex: 1;
+    overflow-y: auto;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid #2a2520;
+}
+.cal-agenda::-webkit-scrollbar { width: 6px; }
+.cal-agenda::-webkit-scrollbar-track { background: transparent; }
+.cal-agenda::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+.agenda-heading {
+    font-size: 11px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 6px;
+}
+.agenda-day {
+    font-size: 12px;
+    color: #887750;
+    font-style: italic;
+    margin: 10px 0 4px;
+}
+.agenda-day:first-of-type { margin-top: 0; }
+.agenda-item {
+    padding: 6px 9px;
+    margin-bottom: 5px;
+    background: #1e1b17;
+    border-radius: 5px;
+    border-left: 3px solid #555;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+.agenda-item:hover { background: #2a2520; }
+.agenda-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.agenda-district { font-size: 12px; color: #c9b882; }
+.agenda-item.no-district { cursor: default; }
+.agenda-item.no-district .agenda-district { color: #887750; font-style: italic; }
+.agenda-delete {
+    background: none;
+    border: none;
+    color: #444;
+    cursor: pointer;
+    font-size: 13px;
+    padding: 0 0 0 6px;
+    line-height: 1;
+}
+.agenda-item:hover .agenda-delete { color: #666; }
+.agenda-delete:hover { color: #a33 !important; }
+.agenda-text { font-size: 13px; line-height: 1.4; color: #bbb; margin-top: 2px; }
+
+.form-hint { font-size: 11px; color: #666; font-style: italic; margin: -4px 0 8px; }
+
+.timeline-selected {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    background: rgba(201, 184, 130, 0.14);
+    border-left: 1px solid rgba(201, 184, 130, 0.5);
+    border-right: 1px solid rgba(201, 184, 130, 0.5);
+    pointer-events: none;
+}
+.timeline-today {
+    position: absolute;
+    top: 0;
+    width: 1px;
+    height: 100%;
+    background: #5f8f8a;
+    pointer-events: none;
+}
+.timeline-day-label.tick {
+    transform: none;
+    padding-left: 4px;
+    border-left: 1px solid #333;
+    line-height: 24px;
+}
+
+/* ── Scrollbar ── */
+.district-card::-webkit-scrollbar { width: 6px; }
+.district-card::-webkit-scrollbar-track { background: transparent; }
+.district-card::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+.district-card::-webkit-scrollbar-thumb:hover { background: #555; }
