@@ -174,13 +174,6 @@
         }
     };
 
-    // ── Characters ──
-    const CHARACTERS = {
-        gondgieaux: { name: 'Gondgieaux', color: '#c9b882', cssClass: 'gondgieaux' },
-        xghchli: { name: 'Xghchli', color: '#7ca7bf', cssClass: 'xghchli' },
-        gm: { name: 'GM', color: '#a33', cssClass: 'gm' }
-    };
-
     // ── Seminarian Calendar ──
     // 16 months of 16 days (a 256-day year), 8-day weeks, two weeks to a month.
     // Because 16 is a multiple of 8, every month opens on the first day of the week.
@@ -266,102 +259,475 @@
     let calView = 'month';     // 'month' | 'year' | 'years'
     let calCursor = 0;         // absolute day anchoring the visible month / year / 16-year block
 
-    // ── Storage ──
-    const STORAGE_KEY = 'seminarios-explorer';
+    // ── Model ──
+    // Rows are kept in the API's shape (PLAN.md §5) so LocalStore and RemoteStore feed
+    // the same renderers. `day` is an absolute day count the server never interprets.
+    const SCOPE = 'seminarios';
     const DEFAULT_START = toAbs(6329, 5, 1);   // 1 Gaoweihan 6329, the first day of spring
     const DEFAULT_SETTINGS = { era: 'common', campaignStart: DEFAULT_START, today: null };
+    const GM_ROLES = ['gm', 'admin'];
+    const VISIBILITIES = { party: 'Party', public: 'Public', gm: 'GM only' };
+    const DEFAULT_COLOR = '#888';
+    const EVENT_FIELDS = ['id', 'scope', 'place_id', 'place', 'day', 'time_of_day', 'text', 'character_id', 'visibility'];
+    const NOTE_FIELDS = ['id', 'scope', 'place_id', 'text', 'visibility'];
 
-    function normalizeData(data, fallbackSettings) {
-        data = data && typeof data === 'object' ? data : {};
-        data.events = Array.isArray(data.events) ? data.events : [];
-        data.notes = data.notes && typeof data.notes === 'object' ? data.notes : {};
-        data.settings = Object.assign({}, DEFAULT_SETTINGS, fallbackSettings || {}, data.settings || {});
-        if (!CAL.eras[data.settings.era]) data.settings.era = 'common';
-        // Migrate "day-N" events from the old ten-day placeholder calendar onto real dates,
-        // counting from the campaign's first day.
-        for (const e of data.events) {
-            if (typeof e.date !== 'number' && typeof e.day === 'string') {
-                const n = parseInt(e.day.split('-')[1], 10);
-                e.date = data.settings.campaignStart + (isNaN(n) ? 0 : n - 1);
-                delete e.day;
-            }
-            if (!CAL.timesOfDay.includes(e.time)) e.time = CAL.timesOfDay[0];
-        }
-        data.events = data.events.filter(e => typeof e.date === 'number');
-        return data;
+    function randHex(n) {
+        const b = new Uint8Array(n / 2);
+        crypto.getRandomValues(b);
+        return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
     }
-    // ── Store ──
-    // Everything that touches persistence lives behind this interface (PLAN.md §7).
-    // `state` is the live object the renderers read; every mutation goes through a
-    // method so the storage layer can be swapped without touching the UI.
-    // LocalStore is today's behavior: localStorage only, no token, works standalone.
+    // Client-generated, time-ordered ids: a retried POST with the same id is idempotent.
+    function newId(prefix) { return prefix + Date.now().toString(16).padStart(12, '0') + randHex(8); }
+    // Server timestamps look like "2026-09-17 08:12:11.123" (UTC, no Z). Local rows use the
+    // same shape so string order stays chronological until the server's copy replaces them.
+    function nowStamp() { return new Date().toISOString().replace('T', ' ').replace('Z', ''); }
+    function pick(obj, keys) {
+        const out = {};
+        for (const k of keys) if (obj[k] !== undefined) out[k] = obj[k];
+        return out;
+    }
+
+    function normalizeSettings(raw, fallback) {
+        const s = Object.assign({}, DEFAULT_SETTINGS, fallback || {}, raw || {});
+        if (!CAL.eras[s.era]) s.era = 'common';
+        if (typeof s.campaignStart !== 'number') s.campaignStart = DEFAULT_START;
+        if (typeof s.today !== 'number') s.today = null;
+        return s;
+    }
+    // Accepts today's rows or the pre-API localStorage shape (district/date/time/character,
+    // notes as a per-district text map) and returns rows. Legacy "day-N" strings are dated
+    // against the campaign start, as before.
+    function normalizeData(data, fallbackSettings, authorId) {
+        data = data && typeof data === 'object' ? data : {};
+        const settings = normalizeSettings(data.settings, fallbackSettings);
+        const events = [];
+        for (const e of Array.isArray(data.events) ? data.events : []) {
+            if (!e || typeof e !== 'object') continue;
+            let day = typeof e.day === 'number' ? e.day : typeof e.date === 'number' ? e.date : null;
+            if (day === null && typeof e.day === 'string') {
+                const n = parseInt(e.day.split('-')[1], 10);
+                day = settings.campaignStart + (isNaN(n) ? 0 : n - 1);
+            }
+            if (typeof day !== 'number' || typeof e.text !== 'string') continue;
+            const stamp = e.created_at || (typeof e.timestamp === 'number'
+                ? new Date(e.timestamp).toISOString().replace('T', ' ').replace('Z', '') : nowStamp());
+            const time = e.time_of_day || e.time;
+            events.push({
+                id: String(e.id || newId('evt_')),
+                scope: e.scope || SCOPE,
+                place_id: e.place_id !== undefined ? e.place_id : (e.district || null),
+                place: e.place || null,
+                day,
+                time_of_day: CAL.timesOfDay.includes(time) ? time : CAL.timesOfDay[0],
+                text: e.text,
+                author_id: e.author_id || authorId,
+                character_id: e.character_id !== undefined ? e.character_id : (e.character || null),
+                visibility: VISIBILITIES[e.visibility] ? e.visibility : 'party',
+                created_at: stamp,
+                updated_at: e.updated_at || stamp,
+                deleted_at: null
+            });
+        }
+        let notes = [];
+        if (Array.isArray(data.notes)) {
+            notes = data.notes.filter(n => n && typeof n.text === 'string' && n.id).map(n => Object.assign({
+                scope: SCOPE, place_id: null, author_id: authorId, visibility: 'party',
+                created_at: nowStamp(), updated_at: nowStamp(), deleted_at: null
+            }, n));
+        } else if (data.notes && typeof data.notes === 'object') {
+            for (const [district, text] of Object.entries(data.notes)) {
+                if (typeof text !== 'string' || !text.trim()) continue;
+                const stamp = nowStamp();
+                notes.push({ id: newId('note_'), scope: SCOPE, place_id: district, text, author_id: authorId,
+                             visibility: 'party', created_at: stamp, updated_at: stamp, deleted_at: null });
+            }
+        }
+        return { events, notes, settings };
+    }
+
+    // ── Stores ──
+    // Everything that touches persistence lives behind this interface (PLAN.md §7):
+    //   state            the live {events, notes, settings} the renderers read
+    //   session          {player, role, characters} for this browser, or null while connecting
+    //   roster           {players, characters} for naming everyone else's entries
+    //   addEvent/updateEvent/deleteEvent, addNote/updateNote/deleteNote, updateSettings
+    //   onChange(fn)     called after data arrives from elsewhere
+    //   status()         {mode, online, pending, auth, ...} for the top-bar indicator
+    //   start()          kick off sync
+    // Mutations are synchronous: they change `state` at once and, remotely, queue the write.
+
+    const STORAGE_KEY = 'seminarios-explorer';
+    const TOKEN_KEY = 'seminarios-token';
+    const CACHE_KEY = 'seminarios-cache';
+    const OUTBOX_KEY = 'seminarios-outbox';
+    const CONFLICT_KEY = 'seminarios-conflicts';
+    const POLL_MS = 20000;
+    const REQUEST_TIMEOUT_MS = 15000;
+    const API_BASE = localStorage.getItem('seminarios-api')
+        || (['localhost', '127.0.0.1'].includes(location.hostname)
+            ? 'http://localhost:9286/api/v1'
+            : 'https://seminarios-api.slippi.org/api/v1');
+
+    function readJson(key, fallback) {
+        try { const v = JSON.parse(localStorage.getItem(key)); return v === null || v === undefined ? fallback : v; }
+        catch { return fallback; }
+    }
+    function writeJson(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
+
+    // LocalStore: today's behavior. localStorage only, no token, works standalone.
+    // The browser is its own GM so every control is available.
+    const LOCAL_PLAYER = { id: 'local', display_name: 'You', active: 1 };
+    const LOCAL_CHARACTERS = [
+        { id: 'gondgieaux', player_id: 'local', name: 'Gondgieaux', kind: 'pc', color: '#c9b882', active: 1 },
+        { id: 'xghchli', player_id: 'local', name: 'Xghchli', kind: 'pc', color: '#7ca7bf', active: 1 },
+        { id: 'gm', player_id: 'local', name: 'GM', kind: 'npc', color: '#a33', active: 1 }
+    ];
     function LocalStore() {
-        let raw = null;
-        try { raw = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { /* empty or corrupt */ }
-        const state = normalizeData(raw);
-        const persist = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        const state = normalizeData(readJson(STORAGE_KEY, null), null, LOCAL_PLAYER.id);
+        const persist = () => writeJson(STORAGE_KEY, state);
+        const find = (list, id) => list.find(r => r.id === id);
         return {
+            mode: 'local',
             state,
-            addEvent(event) { state.events.push(event); persist(); },
+            session: { player: LOCAL_PLAYER, role: 'gm', characters: LOCAL_CHARACTERS },
+            roster: { players: [LOCAL_PLAYER], characters: LOCAL_CHARACTERS },
+            status() { return { mode: 'local', online: true, pending: 0, auth: 'ok' }; },
+            onChange() {},
+            start() { persist(); },
+            addEvent(row) { state.events.push(row); persist(); },
+            updateEvent(id, patch) { const r = find(state.events, id); if (r) { Object.assign(r, patch, { updated_at: nowStamp() }); persist(); } },
             deleteEvent(id) { state.events = state.events.filter(e => e.id !== id); persist(); },
-            setNote(districtKey, text) { state.notes[districtKey] = text; persist(); },
-            updateSettings(patch) { Object.assign(state.settings, patch); persist(); },
-            // Import merge: events by id; a note only where ours is empty. Returns events added.
-            merge(incoming) {
-                const existing = new Set(state.events.map(e => e.id));
-                let added = 0;
-                for (const e of incoming.events) {
-                    if (!existing.has(e.id)) { state.events.push(e); added++; }
-                }
-                for (const [district, note] of Object.entries(incoming.notes)) {
-                    if (!state.notes[district] && note) state.notes[district] = note;
-                }
-                persist();
-                return added;
-            },
-            flush: persist
+            addNote(row) { state.notes.push(row); persist(); },
+            updateNote(id, patch) { const r = find(state.notes, id); if (r) { Object.assign(r, patch, { updated_at: nowStamp() }); persist(); } },
+            deleteNote(id) { state.notes = state.notes.filter(n => n.id !== id); persist(); },
+            updateSettings(patch) { Object.assign(state.settings, patch); persist(); }
         };
     }
-    const store = LocalStore();
+
+    // RemoteStore: the API is the truth; localStorage is a cache and an outbox.
+    // Writes land in the cache at once and queue in the outbox, which flushes in the
+    // background and survives reloads, so a dead wifi link never loses a logged event.
+    function RemoteStore(token) {
+        const cache = readJson(CACHE_KEY, {});
+        const state = {
+            events: Array.isArray(cache.events) ? cache.events : [],
+            notes: Array.isArray(cache.notes) ? cache.notes : [],
+            settings: normalizeSettings(cache.settings)
+        };
+        let serverTime = cache.server_time || null;
+        let outbox = readJson(OUTBOX_KEY, []);
+        const listeners = [];
+        const status = {
+            mode: 'remote', online: navigator.onLine, pending: outbox.length, syncing: false,
+            auth: 'unknown', lastSync: cache.last_sync || null, error: null
+        };
+        const self = {
+            mode: 'remote',
+            state,
+            session: cache.session || null,
+            roster: cache.roster || { players: [], characters: [] },
+            status: () => status,
+            onChange(fn) { listeners.push(fn); },
+            conflicts: () => readJson(CONFLICT_KEY, [])
+        };
+
+        const notify = () => listeners.forEach(fn => fn());
+        function persist() {
+            writeJson(CACHE_KEY, {
+                events: state.events, notes: state.notes, settings: state.settings,
+                server_time: serverTime, session: self.session, roster: self.roster, last_sync: status.lastSync
+            });
+        }
+        function persistOutbox() { writeJson(OUTBOX_KEY, outbox); status.pending = outbox.length; }
+        // The losing side of a conflict, or a write the server refused, is kept here so
+        // nothing typed at the table is silently destroyed (PLAN.md §7.8).
+        function logConflict(entry) {
+            const log = readJson(CONFLICT_KEY, []);
+            log.push(Object.assign({ at: nowStamp() }, entry));
+            writeJson(CONFLICT_KEY, log.slice(-200));
+        }
+
+        async function api(method, path, body) {
+            const ctl = new AbortController();
+            const timer = setTimeout(() => ctl.abort(), REQUEST_TIMEOUT_MS);
+            try {
+                const headers = { 'Authorization': 'Bearer ' + token };
+                if (body) headers['Content-Type'] = 'application/json';
+                const res = await fetch(API_BASE + path, {
+                    method, headers, body: body ? JSON.stringify(body) : undefined, signal: ctl.signal
+                });
+                let data = null;
+                try { data = await res.json(); } catch { /* no body */ }
+                return { status: res.status, data };
+            } finally { clearTimeout(timer); }
+        }
+
+        function pendingFor(table, id) { return outbox.find(o => o.table === table && o.id === id && !o.inflight); }
+        function applyRow(table, row) {
+            const list = state[table];
+            const i = list.findIndex(r => r.id === row.id);
+            if (row.deleted_at) { if (i !== -1) list.splice(i, 1); return; }
+            // A change queued behind an in-flight write must not be shown as reverted.
+            const pending = pendingFor(table, row.id);
+            if (pending && pending.op === 'update') row = Object.assign({}, row, pending.body);
+            if (i === -1) list.push(row); else list[i] = row;
+        }
+        function mergeRows(table, rows, full) {
+            const pendingIds = new Set(outbox.filter(o => o.table === table).map(o => o.id));
+            const byId = new Map(state[table].map(r => [r.id, r]));
+            if (full) for (const id of [...byId.keys()]) if (!pendingIds.has(id)) byId.delete(id);
+            for (const r of rows) {
+                if (pendingIds.has(r.id)) {
+                    // Ours is still queued and will win; keep theirs where it can be found.
+                    const ours = byId.get(r.id);
+                    if (ours && ours.text !== r.text && !r.deleted_at) logConflict({ table, id: r.id, theirs: r.text, ours: ours.text });
+                    continue;
+                }
+                if (r.deleted_at) byId.delete(r.id); else byId.set(r.id, r);
+            }
+            state[table] = [...byId.values()];
+        }
+
+        // Outbox entries coalesce by (table, id) so a burst of edits to one note is one PATCH.
+        function enqueue(item) {
+            const i = outbox.findIndex(o => o.table === item.table && o.id === item.id && !o.inflight);
+            if (i === -1) {
+                outbox.push(item);
+            } else {
+                const prev = outbox[i];
+                if (item.table === 'settings' || (item.op === 'update' && prev.op !== 'delete')) {
+                    prev.body = Object.assign({}, prev.body, item.body);
+                } else if (item.op === 'delete') {
+                    if (prev.op === 'add') outbox.splice(i, 1); else outbox[i] = item;
+                } else {
+                    outbox[i] = item;
+                }
+            }
+            persistOutbox();
+            notify();   // the indicator shows the pending write at once
+            setTimeout(tick, 0);
+        }
+        function send(item) {
+            const { table, op, id, body } = item;
+            if (table === 'settings') return api('PUT', '/settings', Object.assign({ scope: SCOPE }, body));
+            if (op === 'add') return api('POST', '/' + table, body);
+            if (op === 'update') return api('PATCH', `/${table}/${id}`, body);
+            return api('DELETE', `/${table}/${id}`);
+        }
+
+        // Returns false only when the network failed; every other outcome lets the pull proceed.
+        let flushing = false;
+        async function flush() {
+            if (flushing) return true;
+            flushing = true;
+            status.syncing = true;
+            let reachable = true;
+            try {
+                while (outbox.length) {
+                    const item = outbox[0];
+                    item.inflight = true;
+                    let res;
+                    try { res = await send(item); }
+                    catch { status.online = false; item.inflight = false; reachable = false; break; }   // network: keep it, retry later
+                    status.online = true;
+                    if (res.status === 401) { status.auth = 'rejected'; item.inflight = false; break; }
+                    if (res.status === 429 || res.status >= 500) {
+                        status.error = `server ${res.status}`; item.inflight = false; break;
+                    }
+                    if (res.status >= 400) {
+                        // Refused for good (validation, permission, unknown row): drop it, keep the text.
+                        logConflict({ table: item.table, id: item.id, refused: res.status, detail: res.data && res.data.detail, body: item.body });
+                    } else if (item.table === 'settings') {
+                        if (res.data && res.data.settings) Object.assign(state.settings, normalizeSettings(res.data.settings));
+                    } else if (res.data && res.data.id) {
+                        applyRow(item.table, res.data);   // server-assigned timestamps replace ours
+                    }
+                    outbox.shift();
+                    persistOutbox();
+                    status.error = null;
+                }
+            } finally {
+                flushing = false;
+                status.syncing = false;
+                persist();
+            }
+            return reachable;
+        }
+
+        async function pull() {
+            const since = serverTime;
+            const path = `/state?scope=${encodeURIComponent(SCOPE)}` + (since ? `&since=${encodeURIComponent(since)}` : '');
+            let res;
+            try { res = await api('GET', path); } catch { status.online = false; return; }
+            status.online = true;
+            if (res.status === 401) { status.auth = 'rejected'; return; }
+            if (res.status !== 200 || !res.data) { status.error = `server ${res.status}`; return; }
+            const d = res.data;
+            mergeRows('events', d.events || [], !since);
+            mergeRows('notes', d.notes || [], !since);
+            const pendingSettings = pendingFor('settings', 'settings');
+            Object.assign(state.settings, normalizeSettings(d.settings), pendingSettings ? pendingSettings.body : {});
+            serverTime = d.server_time;   // opaque cursor; handed back verbatim as `since`
+            status.lastSync = Date.now();
+            status.error = null;
+            persist();
+        }
+
+        async function loadIdentity() {
+            let me, roster;
+            try {
+                me = await api('GET', '/me');
+                roster = me.status === 200 ? await api('GET', '/roster') : null;
+            } catch { status.online = false; return; }
+            status.online = true;
+            if (me.status === 401) { status.auth = 'rejected'; return; }
+            if (me.status !== 200 || !me.data) { status.error = `server ${me.status}`; return; }
+            status.auth = 'ok';
+            self.session = { player: me.data.player, role: me.data.role, characters: me.data.characters };
+            if (roster && roster.status === 200 && roster.data) self.roster = roster.data;
+            persist();
+        }
+
+        // One sync at a time: identity if we lack it, then push the outbox, then pull.
+        // A request that arrives mid-sync runs one more afterwards, so a write queued
+        // during a pull is still pushed (and its result pulled) without waiting a poll.
+        let ticking = null, again = false;
+        function tick() {
+            if (ticking) { again = true; return ticking; }
+            ticking = (async () => {
+                if (status.auth !== 'ok') await loadIdentity();
+                if (status.auth === 'rejected') return;
+                // Always try the pull: a failed one is how we learn we're offline, and a
+                // successful one is how we learn we're back. Skip it only when the flush
+                // just hit the network, to avoid paying the timeout twice.
+                if (await flush()) await pull();
+            })().catch(err => { status.error = String(err); })
+               .finally(() => {
+                   ticking = null;
+                   notify();
+                   if (again) { again = false; tick(); }
+               });
+            return ticking;
+        }
+        self.sync = tick;
+        self.start = function() {
+            tick();
+            setInterval(() => { if (document.visibilityState === 'visible') tick(); }, POLL_MS);
+            document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tick(); });
+            window.addEventListener('focus', () => tick());
+            window.addEventListener('online', () => { status.online = true; tick(); });
+            window.addEventListener('offline', () => { status.online = false; notify(); });
+        };
+
+        const find = (list, id) => list.find(r => r.id === id);
+        self.addEvent = row => { state.events.push(row); persist(); enqueue({ table: 'events', op: 'add', id: row.id, body: pick(row, EVENT_FIELDS) }); };
+        self.updateEvent = (id, patch) => {
+            const r = find(state.events, id); if (!r) return;
+            Object.assign(r, patch, { updated_at: nowStamp() }); persist();
+            enqueue({ table: 'events', op: 'update', id, body: patch });
+        };
+        self.deleteEvent = id => { state.events = state.events.filter(e => e.id !== id); persist(); enqueue({ table: 'events', op: 'delete', id }); };
+        self.addNote = row => { state.notes.push(row); persist(); enqueue({ table: 'notes', op: 'add', id: row.id, body: pick(row, NOTE_FIELDS) }); };
+        self.updateNote = (id, patch) => {
+            const r = find(state.notes, id); if (!r) return;
+            Object.assign(r, patch, { updated_at: nowStamp() }); persist();
+            enqueue({ table: 'notes', op: 'update', id, body: patch });
+        };
+        self.deleteNote = id => { state.notes = state.notes.filter(n => n.id !== id); persist(); enqueue({ table: 'notes', op: 'delete', id }); };
+        self.updateSettings = patch => { Object.assign(state.settings, patch); persist(); enqueue({ table: 'settings', op: 'update', id: 'settings', body: patch }); };
+        return self;
+    }
+
+    // ── Token bootstrap ──
+    // Enrollment is a magic link: https://seminarios.slippi.org/#t=K7RM-9XQ2-4TBV-8HNC
+    // The fragment never reaches a server, so the token lands in no access log. It is
+    // persisted and stripped from the URL at once. Manual entry is the fallback (top bar).
+    function bootstrapToken() {
+        const m = location.hash.match(/(?:^#|[#&])t=([^&]+)/);
+        if (m) {
+            localStorage.setItem(TOKEN_KEY, decodeURIComponent(m[1]).trim());
+            history.replaceState(null, '', location.pathname + location.search);
+        }
+        return localStorage.getItem(TOKEN_KEY);
+    }
+    const TOKEN = bootstrapToken();
+    const store = TOKEN ? RemoteStore(TOKEN) : LocalStore();
     const DATA = store.state;
+
+    // ── Identity helpers ──
+    function me() { return store.session ? store.session.player : null; }
+    function myRole() { return store.session ? store.session.role : 'player'; }
+    function isGm() { return GM_ROLES.includes(myRole()); }
+    function playerName(id) {
+        const p = store.roster.players.find(x => x.id === id);
+        return p ? p.display_name : 'Unknown';
+    }
+    function charOf(id) { return id ? store.roster.characters.find(c => c.id === id) || null : null; }
+    function eventColor(e) { const c = charOf(e.character_id); return c && c.color ? c.color : DEFAULT_COLOR; }
+    function eventWho(e) { const c = charOf(e.character_id); return c ? c.name : playerName(e.author_id); }
+    function eventWhoTitle(e) {
+        const c = charOf(e.character_id);
+        return c ? `${c.name} · logged by ${playerName(e.author_id)}` : `logged by ${playerName(e.author_id)}`;
+    }
+    function canMutate(row) { return isGm() || (!!me() && row.author_id === me().id); }
+    // A player speaks as their own characters; the GM owns every NPC and may pick any.
+    function pickableCharacters() {
+        if (isGm()) return store.roster.characters.filter(c => c.active !== 0);
+        return store.session ? store.session.characters : [];
+    }
+    function allowedVisibilities() { return isGm() ? ['party', 'public', 'gm'] : ['party', 'public']; }
+    function lockGlyph(row) { return row.visibility === 'gm' ? '<span class="lock" title="GM only">🔒</span> ' : ''; }
 
     function getToday() {
         if (typeof DATA.settings.today === 'number') return DATA.settings.today;
         // Until "today" is set explicitly, it floats to the latest logged event.
-        return DATA.events.reduce((m, e) => Math.max(m, e.date), DATA.settings.campaignStart);
+        return DATA.events.reduce((m, e) => Math.max(m, e.day), DATA.settings.campaignStart);
     }
+    // Read order matches the server's: (day, time_of_day, created_at, id).
     function sortEvents(list) {
-        return list.sort((a, b) => a.date - b.date
-            || CAL.timesOfDay.indexOf(a.time) - CAL.timesOfDay.indexOf(b.time)
-            || (a.timestamp || 0) - (b.timestamp || 0));
+        return list.sort((a, b) => a.day - b.day
+            || CAL.timesOfDay.indexOf(a.time_of_day) - CAL.timesOfDay.indexOf(b.time_of_day)
+            || (a.created_at || '').localeCompare(b.created_at || '')
+            || a.id.localeCompare(b.id));
     }
     function eventsInRange(start, end) {
-        return sortEvents(DATA.events.filter(e => e.date >= start && e.date <= end));
+        return sortEvents(DATA.events.filter(e => e.day >= start && e.day <= end));
     }
     function getEvents(districtKey) {
-        let events = DATA.events.filter(e => e.district === districtKey);
-        if (selectedDay !== null) events = events.filter(e => e.date === selectedDay);
+        let events = DATA.events.filter(e => e.place_id === districtKey);
+        if (selectedDay !== null) events = events.filter(e => e.day === selectedDay);
         return sortEvents(events);
     }
     // `districtKey` may be null for events that happen outside any district (travel, the open sea);
-    // `place` is optional free text describing where.
-    function addEvent(districtKey, date, time, text, character, place) {
+    // `place` is optional free text describing where. The author is always this session.
+    function addEvent(districtKey, day, timeOfDay, text, characterId, place, visibility) {
+        const author = me();
+        if (!author) return false;
+        const stamp = nowStamp();
         store.addEvent({
-            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-            district: districtKey || null,
-            place: place || undefined,
-            date, time, text, character,
-            timestamp: Date.now()
+            id: newId('evt_'),
+            scope: SCOPE,
+            place_id: districtKey || null,
+            place: place || null,
+            day,
+            time_of_day: timeOfDay,
+            text,
+            author_id: author.id,
+            character_id: characterId || null,
+            visibility: allowedVisibilities().includes(visibility) ? visibility : 'party',
+            created_at: stamp,
+            updated_at: stamp,
+            deleted_at: null
         });
+        return true;
     }
     function eventPlaceLabel(e) {
-        const district = DISTRICTS[e.district];
+        const district = DISTRICTS[e.place_id];
         if (district) return e.place ? `${district.name} · ${e.place}` : district.name;
         return e.place || 'Elsewhere';
     }
     function deleteEvent(eventId) { store.deleteEvent(eventId); }
-    function getNotes(districtKey) { return DATA.notes[districtKey] || ''; }
-    function saveNotes(districtKey, text) { store.setNote(districtKey, text); }
+    function notesFor(districtKey) { return DATA.notes.filter(n => n.place_id === districtKey); }
 
     // ── Map Setup ──
     const container = d3.select('#mapContainer');
@@ -525,21 +891,18 @@
                 ? '<div class="no-events">No events logged for this district yet.</div>'
                 : `<div class="no-events">Nothing logged here on ${escapeHtml(formatDateShort(selectedDay))}.</div>`;
         } else {
-            list.innerHTML = events.map(e => {
-                const char = CHARACTERS[e.character] || CHARACTERS.gondgieaux;
-                return `
-                    <div class="event-item event-border-${char.cssClass}">
+            list.innerHTML = events.map(e => `
+                    <div class="event-item${e.visibility === 'gm' ? ' vis-gm' : ''}" style="border-left-color:${eventColor(e)}">
                         <div class="event-header">
-                            <span class="event-date" title="${escapeHtml(formatDate(e.date))}">${escapeHtml(formatDateShort(e.date))}, ${e.time}${e.place ? ' · ' + escapeHtml(e.place) : ''}</span>
+                            <span class="event-date" title="${escapeHtml(formatDate(e.day))}">${lockGlyph(e)}${escapeHtml(formatDateShort(e.day))}, ${e.time_of_day}${e.place ? ' · ' + escapeHtml(e.place) : ''}</span>
                             <span>
-                                <span class="event-char char-${char.cssClass}">${char.name}</span>
-                                <button class="event-delete" data-id="${e.id}" title="Delete">&times;</button>
+                                <span class="event-char" style="background:${eventColor(e)}" title="${escapeHtml(eventWhoTitle(e))}">${escapeHtml(eventWho(e))}</span>
+                                ${canMutate(e) ? `<button class="event-delete" data-id="${e.id}" title="Delete">&times;</button>` : ''}
                             </span>
                         </div>
                         <div class="event-text">${escapeHtml(e.text)}</div>
                     </div>
-                `;
-            }).join('');
+                `).join('');
         }
 
         // Wire up delete buttons
@@ -597,11 +960,12 @@
         const text = document.getElementById('eventText').value.trim();
         if (!text || !currentDistrict) return;
 
-        const date = getFormDate();
+        const day = getFormDate();
         const time = document.getElementById('eventTime').value;
         const character = document.getElementById('charSelect').value;
+        const visibility = document.getElementById('eventVis').value;
 
-        addEvent(currentDistrict, date, time, text, character);
+        if (!addEvent(currentDistrict, day, time, text, character, null, visibility)) return;
         document.getElementById('eventText').value = '';
         renderEvents();
         renderCalendar();
@@ -609,16 +973,74 @@
     });
 
     // ── Notes ──
-    function renderNotes() {
-        const textarea = document.getElementById('notesText');
-        textarea.value = getNotes(currentDistrict);
-    }
+    // A district holds one note row per author and visibility. Party (and public) notes
+    // first, GM-only notes below a divider, each block by updated_at (PLAN.md §12 Q2).
+    // Notes the caller may change are textareas that save on blur or after a pause --
+    // never per keystroke, which would meet the API's write limit (PLAN.md §7.5).
+    const NOTE_IDLE_MS = 5000;
+    const notesList = document.getElementById('notesList');
+    const noteTimers = new Map();
 
-    document.getElementById('notesText').addEventListener('input', debounce(() => {
-        if (currentDistrict) {
-            saveNotes(currentDistrict, document.getElementById('notesText').value);
+    function noteCard(n, editable) {
+        const who = n.author_id === (me() && me().id) ? 'Your note' : playerName(n.author_id);
+        const head = `<div class="note-head"><span>${escapeHtml(who)}</span><span class="note-meta">${lockGlyph(n)}${VISIBILITIES[n.visibility] || ''}</span></div>`;
+        if (!editable) return `<div class="note-card${n.visibility === 'gm' ? ' vis-gm' : ''}">${head}<div class="note-text">${escapeHtml(n.text)}</div></div>`;
+        return `<div class="note-card own${n.visibility === 'gm' ? ' vis-gm' : ''}">${head}
+            <textarea data-id="${n.id || ''}" data-vis="${n.visibility}" data-place="${escapeHtml(n.place_id || '')}"
+                placeholder="${n.visibility === 'gm' ? 'GM-only notes about this district...' : 'Notes about this district, shared with the party...'}">${escapeHtml(n.text)}</textarea>
+            <div class="notes-save-hint">Saves when you pause</div></div>`;
+    }
+    function renderNotes() {
+        // Never rebuild under someone's cursor; the next render catches up.
+        if (notesList.contains(document.activeElement)) return;
+        flushNoteSaves();
+        const mine = me();
+        const rows = notesFor(currentDistrict).slice()
+            .sort((a, b) => (a.updated_at || '').localeCompare(b.updated_at || ''));
+        const blocks = [{ vis: ['party', 'public'], own: 'party', label: null }];
+        if (isGm()) blocks.push({ vis: ['gm'], own: 'gm', label: 'GM only' });
+        let html = '';
+        for (const b of blocks) {
+            if (b.label) html += `<div class="notes-divider">🔒 ${b.label}</div>`;
+            const inBlock = rows.filter(n => b.vis.includes(n.visibility));
+            const hasOwn = mine && inBlock.some(n => n.author_id === mine.id);
+            if (mine && !hasOwn) {
+                html += noteCard({ id: '', place_id: currentDistrict, visibility: b.own, text: '', author_id: mine.id }, true);
+            }
+            html += inBlock.map(n => noteCard(n, canMutate(n))).join('');
         }
-    }, 500));
+        if (!mine) html = '<div class="no-events">Connecting…</div>';
+        notesList.innerHTML = html;
+    }
+    function saveNote(ta) {
+        clearTimeout(noteTimers.get(ta));
+        noteTimers.delete(ta);
+        const text = ta.value;
+        const id = ta.dataset.id;
+        if (id) {
+            const row = DATA.notes.find(n => n.id === id);
+            if (!row) return;
+            if (!text.trim()) { store.deleteNote(id); ta.dataset.id = ''; }
+            else if (text !== row.text) store.updateNote(id, { text });
+        } else if (text.trim() && me()) {
+            const stamp = nowStamp();
+            const row = {
+                id: newId('note_'), scope: SCOPE, place_id: ta.dataset.place || null, text,
+                author_id: me().id, visibility: ta.dataset.vis, created_at: stamp, updated_at: stamp, deleted_at: null
+            };
+            store.addNote(row);
+            ta.dataset.id = row.id;
+        }
+    }
+    function flushNoteSaves() { for (const ta of [...noteTimers.keys()]) saveNote(ta); }
+    notesList.addEventListener('input', ev => {
+        const ta = ev.target;
+        if (ta.tagName !== 'TEXTAREA') return;
+        clearTimeout(noteTimers.get(ta));
+        noteTimers.set(ta, setTimeout(() => saveNote(ta), NOTE_IDLE_MS));
+    });
+    notesList.addEventListener('focusout', ev => { if (ev.target.tagName === 'TEXTAREA') saveNote(ev.target); });
+    window.addEventListener('beforeunload', flushNoteSaves);
 
     // ── Details ──
     function renderDetails() {
@@ -710,10 +1132,8 @@
     function dotsHtml(evs) {
         if (!evs.length) return '<span class="cal-dots"></span>';
         if (evs.length > 4) return `<span class="cal-count">${evs.length}</span>`;
-        return '<span class="cal-dots">' + evs.map(e => {
-            const char = CHARACTERS[e.character] || CHARACTERS.gondgieaux;
-            return `<span class="cal-dot" style="background:${char.color}"></span>`;
-        }).join('') + '</span>';
+        return '<span class="cal-dots">' + evs.map(e =>
+            `<span class="cal-dot" style="background:${eventColor(e)}"></span>`).join('') + '</span>';
     }
 
     function renderCalendar() {
@@ -762,7 +1182,7 @@
             });
             for (let day = 1; day <= CAL.daysPerMonth; day++) {
                 const abs = toAbs(d.year, d.month, day);
-                const dayEvents = events.filter(e => e.date === abs);
+                const dayEvents = events.filter(e => e.day === abs);
                 const cell = document.createElement('div');
                 cell.className = 'cal-cell day'
                     + (abs === selectedDay ? ' selected' : '')
@@ -778,7 +1198,7 @@
         } else if (calView === 'year') {
             for (let m = 1; m <= CAL.monthsPerYear; m++) {
                 const s = toAbs(d.year, m, 1), e = s + CAL.daysPerMonth - 1;
-                const count = events.filter(ev => ev.date >= s && ev.date <= e).length;
+                const count = events.filter(ev => ev.day >= s && ev.day <= e).length;
                 const season = CAL.seasons[Math.floor((m - 1) / 4)];
                 const cell = document.createElement('div');
                 cell.className = 'cal-cell month'
@@ -795,7 +1215,7 @@
             const y0 = yearsBlockStart(d.year);
             for (let y = y0; y < y0 + YEARS_PER_BLOCK; y++) {
                 const s = toAbs(y, 1, 1), e = s + CAL.daysPerYear - 1;
-                const count = events.filter(ev => ev.date >= s && ev.date <= e).length;
+                const count = events.filter(ev => ev.day >= s && ev.day <= e).length;
                 const cell = document.createElement('div');
                 cell.className = 'cal-cell year'
                     + (today >= s && today <= e ? ' today' : '')
@@ -829,17 +1249,16 @@
         } else {
             let lastDate = null;
             for (const e of list) {
-                if (selectedDay === null && e.date !== lastDate) {
-                    html += `<div class="agenda-day">${escapeHtml(formatDate(e.date))}</div>`;
-                    lastDate = e.date;
+                if (selectedDay === null && e.day !== lastDate) {
+                    html += `<div class="agenda-day">${escapeHtml(formatDate(e.day))}</div>`;
+                    lastDate = e.day;
                 }
-                const char = CHARACTERS[e.character] || CHARACTERS.gondgieaux;
-                const inDistrict = !!DISTRICTS[e.district];
+                const inDistrict = !!DISTRICTS[e.place_id];
                 html += `
-                    <div class="agenda-item event-border-${char.cssClass}${inDistrict ? '' : ' no-district'}" data-district="${e.district || ''}" title="${char.name}${inDistrict ? ' · show on map' : ''}">
+                    <div class="agenda-item${inDistrict ? '' : ' no-district'}${e.visibility === 'gm' ? ' vis-gm' : ''}" style="border-left-color:${eventColor(e)}" data-district="${e.place_id || ''}" title="${escapeHtml(eventWhoTitle(e))}${inDistrict ? ' · show on map' : ''}">
                         <div class="agenda-head">
-                            <span class="agenda-district">${escapeHtml(eventPlaceLabel(e))}</span>
-                            <span class="event-date">${e.time}<button class="agenda-delete" data-id="${e.id}" title="Delete">&times;</button></span>
+                            <span class="agenda-district">${lockGlyph(e)}${escapeHtml(eventPlaceLabel(e))}</span>
+                            <span class="event-date">${e.time_of_day}${canMutate(e) ? `<button class="agenda-delete" data-id="${e.id}" title="Delete">&times;</button>` : ''}</span>
                         </div>
                         <div class="agenda-text">${escapeHtml(e.text)}</div>
                     </div>`;
@@ -896,7 +1315,8 @@
         const place = document.getElementById('calLogPlace').value.trim();
         const time = document.getElementById('calLogTime').value;
         const character = document.getElementById('charSelect').value;
-        addEvent(district, selectedDay, time, text, character, place);
+        const visibility = document.getElementById('calLogVis').value;
+        if (!addEvent(district, selectedDay, time, text, character, place, visibility)) return;
         document.getElementById('calLogText').value = '';
         document.getElementById('calLogPlace').value = '';
         renderCalendar();
@@ -923,10 +1343,15 @@
 
     function renderSettings() {
         const s = DATA.settings;
+        const gm = isGm();
+        [setEra, setStartMonth, setStartDay, setStartYear].forEach(el => { el.disabled = !gm; });
+        document.getElementById('setHint').textContent = gm
+            ? 'Shared by the whole table. Month, day, and reckoning names live in the CAL table at the top of the script.'
+            : 'Campaign-wide settings; only the GM can change them.';
         setEra.value = s.era;
         document.getElementById('setTodayLabel').textContent =
             formatDateShort(getToday()) + (typeof s.today === 'number' ? '' : ' (auto)');
-        document.getElementById('setTodayBtn').disabled = selectedDay === null || selectedDay === s.today;
+        document.getElementById('setTodayBtn').disabled = !gm || selectedDay === null || selectedDay === s.today;
         if (document.activeElement !== setStartYear) {
             writeDateFields(setStartMonth, setStartDay, setStartYear, s.campaignStart);
         }
@@ -959,8 +1384,8 @@
         let start = DATA.settings.campaignStart;
         let end = getToday();
         for (const e of DATA.events) {
-            start = Math.min(start, e.date);
-            end = Math.max(end, e.date);
+            start = Math.min(start, e.day);
+            end = Math.max(end, e.day);
         }
         end = Math.max(end, start + 9);
         return [start, end];
@@ -1021,15 +1446,14 @@
 
         // Event markers
         DATA.events.forEach(e => {
-            if (e.date < start || e.date > end) return;
-            const timeIdx = Math.max(0, CAL.timesOfDay.indexOf(e.time));
-            const pct = (e.date - start + (timeIdx + 0.5) / CAL.timesOfDay.length) / n * 100;
+            if (e.day < start || e.day > end) return;
+            const timeIdx = Math.max(0, CAL.timesOfDay.indexOf(e.time_of_day));
+            const pct = (e.day - start + (timeIdx + 0.5) / CAL.timesOfDay.length) / n * 100;
             const marker = document.createElement('div');
             marker.className = 'timeline-marker';
-            const char = CHARACTERS[e.character] || CHARACTERS.gondgieaux;
-            marker.style.background = char.color;
+            marker.style.background = eventColor(e);
             marker.style.left = `calc(${pct}% - 4px)`;
-            marker.title = `${char.name} · ${formatDateShort(e.date)} · ${eventPlaceLabel(e)}: ${e.text.slice(0, 50)}`;
+            marker.title = `${eventWho(e)} · ${formatDateShort(e.day)} · ${eventPlaceLabel(e)}: ${e.text.slice(0, 50)}`;
             track.appendChild(marker);
         });
 
@@ -1061,9 +1485,9 @@
         const data = Object.assign({}, DATA, {
             _meta: {
                 exported: new Date().toISOString(),
-                character: document.getElementById('charSelect').value,
+                player: me() ? me().display_name : null,
                 eventCount: DATA.events.length,
-                notesCount: Object.keys(DATA.notes).length,
+                notesCount: DATA.notes.length,
                 calendar: { daysPerMonth: CAL.daysPerMonth, monthsPerYear: CAL.monthsPerYear, epoch: '1 Naoweihan, year 1 (common reckoning)' }
             }
         });
@@ -1071,7 +1495,7 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `seminarios-${data._meta.character}-${new Date().toISOString().slice(0,10)}.json`;
+        a.download = `seminarios-${new Date().toISOString().slice(0,10)}.json`;
         a.click();
         URL.revokeObjectURL(url);
     });
@@ -1091,9 +1515,25 @@
                     alert('Invalid file format — expected Seminarios Explorer JSON.');
                     return;
                 }
-                // Legacy "day-N" files are dated against this browser's campaign start.
-                const incoming = normalizeData(raw, DATA.settings);
-                const added = store.merge(incoming);
+                if (!me()) { alert('Not connected yet — try again in a moment.'); return; }
+                // Legacy "day-N" files are dated against this campaign's start. Everything
+                // imported is authored by this session; unknown characters are dropped.
+                const incoming = normalizeData(raw, DATA.settings, me().id);
+                const eventIds = new Set(DATA.events.map(ev => ev.id));
+                const noteIds = new Set(DATA.notes.map(n => n.id));
+                let added = 0;
+                for (const ev of incoming.events) {
+                    if (eventIds.has(ev.id)) continue;
+                    store.addEvent(Object.assign(ev, {
+                        author_id: me().id,
+                        character_id: charOf(ev.character_id) ? ev.character_id : null,
+                        visibility: allowedVisibilities().includes(ev.visibility) ? ev.visibility : 'party'
+                    }));
+                    added++;
+                }
+                for (const n of incoming.notes) {
+                    if (!noteIds.has(n.id)) store.addNote(Object.assign(n, { author_id: me().id, visibility: 'party' }));
+                }
                 renderCalendar();
                 renderTimeline();
                 if (currentDistrict) renderCurrentTab();
@@ -1106,12 +1546,73 @@
         e.target.value = ''; // reset so same file can be re-imported
     });
 
+    // ── Identity UI: character picker, visibility pickers, sync indicator, token box ──
+    const charSelect = document.getElementById('charSelect');
+    function fillSelect(sel, options, keep) {
+        const prev = keep !== undefined ? keep : sel.value;
+        sel.innerHTML = options.map(([v, label]) => `<option value="${escapeHtml(v)}">${escapeHtml(label)}</option>`).join('');
+        if (options.some(([v]) => v === prev)) sel.value = prev;
+    }
+    function renderIdentity() {
+        const chars = pickableCharacters();
+        const opts = chars.map(c => [c.id, c.kind === 'npc' ? `${c.name} (NPC)` : c.name]);
+        if (isGm() || !chars.length) opts.unshift(['', chars.length ? '— no character —' : '— no characters —']);
+        fillSelect(charSelect, opts, charSelect.value || (chars.length === 1 ? chars[0].id : ''));
+
+        const vis = allowedVisibilities().map(v => [v, VISIBILITIES[v]]);
+        fillSelect(document.getElementById('eventVis'), vis);
+        fillSelect(document.getElementById('calLogVis'), vis);
+
+        const st = store.status();
+        const el = document.getElementById('syncStatus');
+        let text, cls = '';
+        if (st.mode === 'local') { text = 'Local only'; cls = 'local'; }
+        else if (st.auth === 'rejected') { text = 'Token rejected'; cls = 'error'; }
+        else if (!me()) { text = st.online ? 'Connecting…' : 'Offline'; cls = st.online ? '' : 'offline'; }
+        else if (!st.online) { text = `Offline · ${st.pending} pending`; cls = 'offline'; }
+        else if (st.pending) { text = `Syncing · ${st.pending} pending`; cls = 'pending'; }
+        else if (st.error) { text = `Retrying (${st.error})`; cls = 'offline'; }
+        else { text = me().display_name + (isGm() ? ' · GM' : ''); cls = 'ok'; }
+        el.textContent = text;
+        el.className = 'sync-status ' + cls;
+        el.title = st.mode === 'local'
+            ? 'No token: entries stay in this browser. Use your enrollment link, or enter your token, to join the table.'
+            : (st.lastSync ? 'Last sync ' + new Date(st.lastSync).toLocaleTimeString() : '') + (st.auth === 'rejected' ? ' — enter a valid token' : '');
+    }
+    const tokenBox = document.getElementById('tokenBox');
+    document.getElementById('tokenBtn').addEventListener('click', () => {
+        const open = tokenBox.style.display === 'none';
+        tokenBox.style.display = open ? 'flex' : 'none';
+        if (open) document.getElementById('tokenInput').focus();
+    });
+    document.getElementById('tokenSave').addEventListener('click', () => {
+        const v = document.getElementById('tokenInput').value.trim();
+        if (!v) return;
+        localStorage.setItem(TOKEN_KEY, v);
+        localStorage.removeItem(CACHE_KEY);   // a new identity must not inherit another's cache
+        location.reload();
+    });
+    document.getElementById('tokenInput').addEventListener('keydown', ev => { if (ev.key === 'Enter') document.getElementById('tokenSave').click(); });
+    document.getElementById('tokenClear').addEventListener('click', () => {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(CACHE_KEY);   // the outbox is kept: pending writes flush under the next token
+        location.reload();
+    });
+
     // ── Init ──
-    store.flush();                   // write back any migrated legacy events
+    function renderAll() {
+        renderIdentity();
+        renderCalendar();
+        renderTimeline();
+        renderCurrentTab();
+    }
+    store.onChange(renderAll);
+    renderIdentity();
     calCursor = getToday();
     setFormDate(getToday());
     if (window.innerWidth < 1100) toggleCalPanel(true);
     renderCalendar();
     renderTimeline();
-    console.log('Seminarios Explorer initialized!');
+    store.start();
+    console.log(`Seminarios Explorer initialized (${store.mode}${store.mode === 'remote' ? ', ' + API_BASE : ''})`);
 })();

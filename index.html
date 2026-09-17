@@ -21,16 +21,19 @@
         <h1>Seminarios Explorer</h1>
     </div>
     <div class="top-bar-right">
+        <span class="sync-status" id="syncStatus"></span>
         <div class="char-selector">
-            <label>Playing as:</label>
-            <select id="charSelect">
-                <option value="gondgieaux">Gondgieaux</option>
-                <option value="xghchli">Xghchli</option>
-                <option value="gm">GM</option>
-            </select>
+            <label for="charSelect">Character:</label>
+            <select id="charSelect"></select>
         </div>
-        <button id="exportBtn" style="background:#222;color:#887750;border:1px solid #444;border-radius:4px;padding:2px 10px;cursor:pointer;font-family:'Crimson Text',serif;font-size:13px;">Export JSON</button>
-        <button id="importBtn" style="background:#222;color:#887750;border:1px solid #444;border-radius:4px;padding:2px 10px;cursor:pointer;font-family:'Crimson Text',serif;font-size:13px;">Import JSON</button>
+        <button class="bar-btn" id="tokenBtn" title="Enter or replace your player token">Token</button>
+        <div class="token-box" id="tokenBox" style="display:none;">
+            <input type="text" id="tokenInput" placeholder="K7RM-9XQ2-4TBV-8HNC" spellcheck="false" autocomplete="off" autocapitalize="characters">
+            <button class="bar-btn" id="tokenSave">Connect</button>
+            <button class="bar-btn" id="tokenClear" title="Forget the token stored in this browser">Sign out</button>
+        </div>
+        <button class="bar-btn" id="exportBtn">Export JSON</button>
+        <button class="bar-btn" id="importBtn">Import JSON</button>
         <input type="file" id="importFile" accept=".json" style="display:none;">
         <a href="interactive.html">Simple Map</a>
         <a href="https://leependu.github.io/seminarios">Home</a>
@@ -75,6 +78,9 @@
                     </select>
                 </div>
                 <div class="form-row">
+                    <select id="calLogVis" title="Who can see this entry"></select>
+                </div>
+                <div class="form-row">
                     <textarea id="calLogText" placeholder="What happened..."></textarea>
                 </div>
                 <button class="btn-add-event" id="calLogAdd">Add Event</button>
@@ -95,7 +101,7 @@
                     <select id="setStartDay" style="width:44px;"></select>
                     <input type="number" id="setStartYear" style="width:58px;">
                 </div>
-                <div class="notes-save-hint">Anchors the timeline and the old "Day N" events. Month, day, and reckoning names live in the CAL table at the top of the script.</div>
+                <div class="notes-save-hint" id="setHint"></div>
             </div>
             <div class="cal-agenda" id="calAgenda"></div>
         </div>
@@ -6323,13 +6329,14 @@
                         </div>
                         <div class="form-hint" id="eventDateHint"></div>
                         <div class="form-row">
-                            <select id="eventTime">
+                            <select id="eventTime" style="width:50%;">
                                 <option value="morning">Morning</option>
                                 <option value="midday">Midday</option>
                                 <option value="afternoon">Afternoon</option>
                                 <option value="evening">Evening</option>
                                 <option value="night">Night</option>
                             </select>
+                            <select id="eventVis" style="width:50%;" title="Who can see this entry"></select>
                         </div>
                         <div class="form-row">
                             <textarea id="eventText" placeholder="What happened here..."></textarea>
@@ -6339,10 +6346,7 @@
                 </div>
 
                 <div id="tab-notes" class="tab-content" style="display:none;">
-                    <div class="notes-area">
-                        <textarea id="notesText" placeholder="Personal notes about this district..."></textarea>
-                        <div class="notes-save-hint">Auto-saved to your browser</div>
-                    </div>
+                    <div class="notes-area" id="notesList"></div>
                 </div>
 
                 <div id="tab-details" class="tab-content" style="display:none;">
