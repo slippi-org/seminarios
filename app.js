@@ -290,13 +290,40 @@
         data.events = data.events.filter(e => typeof e.date === 'number');
         return data;
     }
-    function loadData() {
+    // ── Store ──
+    // Everything that touches persistence lives behind this interface (PLAN.md §7).
+    // `state` is the live object the renderers read; every mutation goes through a
+    // method so the storage layer can be swapped without touching the UI.
+    // LocalStore is today's behavior: localStorage only, no token, works standalone.
+    function LocalStore() {
         let raw = null;
         try { raw = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { /* empty or corrupt */ }
-        return normalizeData(raw);
+        const state = normalizeData(raw);
+        const persist = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        return {
+            state,
+            addEvent(event) { state.events.push(event); persist(); },
+            deleteEvent(id) { state.events = state.events.filter(e => e.id !== id); persist(); },
+            setNote(districtKey, text) { state.notes[districtKey] = text; persist(); },
+            updateSettings(patch) { Object.assign(state.settings, patch); persist(); },
+            // Import merge: events by id; a note only where ours is empty. Returns events added.
+            merge(incoming) {
+                const existing = new Set(state.events.map(e => e.id));
+                let added = 0;
+                for (const e of incoming.events) {
+                    if (!existing.has(e.id)) { state.events.push(e); added++; }
+                }
+                for (const [district, note] of Object.entries(incoming.notes)) {
+                    if (!state.notes[district] && note) state.notes[district] = note;
+                }
+                persist();
+                return added;
+            },
+            flush: persist
+        };
     }
-    const DATA = loadData();
-    function persist() { localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA)); }
+    const store = LocalStore();
+    const DATA = store.state;
 
     function getToday() {
         if (typeof DATA.settings.today === 'number') return DATA.settings.today;
@@ -319,26 +346,22 @@
     // `districtKey` may be null for events that happen outside any district (travel, the open sea);
     // `place` is optional free text describing where.
     function addEvent(districtKey, date, time, text, character, place) {
-        DATA.events.push({
+        store.addEvent({
             id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
             district: districtKey || null,
             place: place || undefined,
             date, time, text, character,
             timestamp: Date.now()
         });
-        persist();
     }
     function eventPlaceLabel(e) {
         const district = DISTRICTS[e.district];
         if (district) return e.place ? `${district.name} · ${e.place}` : district.name;
         return e.place || 'Elsewhere';
     }
-    function deleteEvent(eventId) {
-        DATA.events = DATA.events.filter(e => e.id !== eventId);
-        persist();
-    }
+    function deleteEvent(eventId) { store.deleteEvent(eventId); }
     function getNotes(districtKey) { return DATA.notes[districtKey] || ''; }
-    function saveNotes(districtKey, text) { DATA.notes[districtKey] = text; persist(); }
+    function saveNotes(districtKey, text) { store.setNote(districtKey, text); }
 
     // ── Map Setup ──
     const container = d3.select('#mapContainer');
@@ -911,8 +934,7 @@
 
     setEra.addEventListener('change', () => {
         const formAbs = getFormDate();
-        DATA.settings.era = setEra.value;
-        persist();
+        store.updateSettings({ era: setEra.value });
         setFormDate(formAbs);
         if (selectedDay !== null) document.getElementById('timelineCurrent').textContent = formatDateShort(selectedDay);
         renderCalendar();
@@ -921,14 +943,12 @@
     });
     document.getElementById('setTodayBtn').addEventListener('click', () => {
         if (selectedDay === null) return;
-        DATA.settings.today = selectedDay;
-        persist();
+        store.updateSettings({ today: selectedDay });
         renderCalendar();
         renderTimeline();
     });
     [setStartMonth, setStartDay, setStartYear].forEach(el => el.addEventListener('change', () => {
-        DATA.settings.campaignStart = readDateFields(setStartMonth, setStartDay, setStartYear);
-        persist();
+        store.updateSettings({ campaignStart: readDateFields(setStartMonth, setStartDay, setStartYear) });
         renderCalendar();
         renderTimeline();
     }));
@@ -1073,22 +1093,7 @@
                 }
                 // Legacy "day-N" files are dated against this browser's campaign start.
                 const incoming = normalizeData(raw, DATA.settings);
-                // Merge events: add any with IDs we don't already have
-                const existingIds = new Set(DATA.events.map(ev => ev.id));
-                let added = 0;
-                for (const ev of incoming.events) {
-                    if (!existingIds.has(ev.id)) {
-                        DATA.events.push(ev);
-                        added++;
-                    }
-                }
-                // Merge notes: incoming overwrites only if current is empty for that district
-                for (const [district, note] of Object.entries(incoming.notes)) {
-                    if (!DATA.notes[district] && note) {
-                        DATA.notes[district] = note;
-                    }
-                }
-                persist();
+                const added = store.merge(incoming);
                 renderCalendar();
                 renderTimeline();
                 if (currentDistrict) renderCurrentTab();
@@ -1102,7 +1107,7 @@
     });
 
     // ── Init ──
-    persist();                       // write back any migrated legacy events
+    store.flush();                   // write back any migrated legacy events
     calCursor = getToday();
     setFormDate(getToday());
     if (window.innerWidth < 1100) toggleCalPanel(true);
