@@ -428,6 +428,68 @@ body {
 .sync-status.offline { color: #c98a5a; border-color: #4a3222; }
 .sync-status.error { color: #d66; border-color: #4a2222; }
 .sync-status.local { color: #8fa3bf; border-color: #2a3240; }
+.bar-btn.warn { color: #d9b26a; border-color: #4a3f22; }
+.bar-btn.warn:hover { color: #f0c97a; border-color: #6b5a30; }
+
+/* ── Unsaved writes (the conflict log) ── */
+.conflict-panel {
+    position: fixed;
+    top: 46px;
+    right: 12px;
+    width: min(520px, calc(100vw - 24px));
+    max-height: 62vh;
+    overflow-y: auto;
+    background: #15130f;
+    border: 1px solid #4a3f22;
+    border-radius: 6px;
+    padding: 10px 12px 12px;
+    z-index: 200;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+.conflict-panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    font-family: 'IM Fell English', serif;
+    font-size: 15px;
+    color: #d9b26a;
+}
+.conflict-panel-head .bar-btn { margin-left: 6px; }
+.conflict-card {
+    background: #1e1b17;
+    border-radius: 6px;
+    border-left: 3px solid #d9b26a;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+}
+.conflict-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    color: #d9b26a;
+    font-style: italic;
+}
+.conflict-when { color: #665; white-space: nowrap; }
+.conflict-why { font-size: 13px; color: #998; margin: 4px 0 6px; line-height: 1.4; }
+.conflict-label { font-size: 11px; color: #665; font-style: italic; }
+.conflict-text {
+    font-size: 14px;
+    line-height: 1.45;
+    color: #ccc;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: #151310;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 5px 7px;
+    margin: 2px 0 6px;
+    user-select: text;
+}
+.conflict-text.theirs { color: #998; }
+
 .token-box { display: flex; gap: 6px; align-items: center; }
 .token-box input {
     background: #111;

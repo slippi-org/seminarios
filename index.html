@@ -32,11 +32,24 @@
             <button class="bar-btn" id="tokenSave">Connect</button>
             <button class="bar-btn" id="tokenClear" title="Forget the token stored in this browser">Sign out</button>
         </div>
+        <button class="bar-btn warn" id="conflictBtn" title="Writes the server refused, and text another device wrote over" style="display:none;"></button>
         <button class="bar-btn" id="exportBtn">Export JSON</button>
         <button class="bar-btn" id="importBtn">Import JSON</button>
         <input type="file" id="importFile" accept=".json" style="display:none;">
         <a href="https://slippi.org">Home</a>
     </div>
+</div>
+
+<!-- Writes that never landed, kept so nothing typed at the table is lost silently -->
+<div class="conflict-panel" id="conflictPanel" style="display:none;">
+    <div class="conflict-panel-head">
+        <span>Unsaved writes</span>
+        <span>
+            <button class="bar-btn" id="conflictClear" title="Forget every entry below -- copy anything you want first">Clear</button>
+            <button class="bar-btn" id="conflictClose">Close</button>
+        </span>
+    </div>
+    <div class="conflict-list" id="conflictList"></div>
 </div>
 
 <!-- Main Layout -->

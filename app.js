@@ -352,6 +352,7 @@
     //   roster           {players, characters} for naming everyone else's entries
     //   addEvent/updateEvent/deleteEvent, addNote/updateNote/deleteNote, updateSettings
     //   onChange(fn)     called after data arrives from elsewhere
+    //   conflicts()      writes that never landed, newest last; clearConflicts() forgets them
     //   status()         {mode, online, pending, auth, ...} for the top-bar indicator
     //   start()          kick off sync
     // Mutations are synchronous: they change `state` at once and, remotely, queue the write.
@@ -393,6 +394,8 @@
             roster: { players: [LOCAL_PLAYER], characters: LOCAL_CHARACTERS },
             status() { return { mode: 'local', online: true, pending: 0, auth: 'ok' }; },
             onChange() {},
+            conflicts: () => [],        // nothing to refuse it and nobody to race
+            clearConflicts() {},
             start() { persist(); },
             addEvent(row) { state.events.push(row); persist(); },
             updateEvent(id, patch) { const r = find(state.events, id); if (r) { Object.assign(r, patch, { updated_at: nowStamp() }); persist(); } },
@@ -433,7 +436,8 @@
             roster: cache.roster || { players: [], characters: [] },
             status: () => status,
             onChange(fn) { listeners.push(fn); },
-            conflicts: () => readJson(CONFLICT_KEY, [])
+            conflicts: () => readJson(CONFLICT_KEY, []),
+            clearConflicts() { writeJson(CONFLICT_KEY, []); notify(); }
         };
 
         const notify = () => listeners.forEach(fn => fn());
@@ -1702,15 +1706,84 @@
         location.reload();
     });
 
+    // ── Unsaved writes ──
+    // `logConflict` has been collecting every refused or overwritten write since Phase 3
+    // (PLAN.md §7.8) and nothing ever showed it. Two shapes land in that log: a write the
+    // server refused for good (`refused`, with the body we tried to send), and a row
+    // someone else changed while ours was still queued (`ours` lost, `theirs` kept).
+    // Both mean text someone typed at the table is not where they think it is, so the
+    // button appears on its own when there is something to say and hides again when there
+    // is not -- it is not worth hiding behind the Token button.
+    const conflictPanel = document.getElementById('conflictPanel');
+    const conflictList = document.getElementById('conflictList');
+    const conflictBtn = document.getElementById('conflictBtn');
+    const REFUSALS = {
+        400: 'the server would not accept it',
+        401: 'your token was not accepted',
+        403: 'you are not allowed to change that entry',
+        404: 'that entry is no longer there',
+        409: 'something else already had that id'
+    };
+
+    function conflictsNow() { return store.conflicts ? store.conflicts() : []; }
+    function conflictWhen(at) {
+        const d = new Date(String(at).replace(' ', 'T') + 'Z');   // stamps are UTC (nowStamp)
+        return isNaN(d) ? String(at) : d.toLocaleString();
+    }
+    function conflictCard(c) {
+        const what = { events: 'Event', notes: 'Note', settings: 'Calendar settings' }[c.table] || c.table;
+        const mine = c.refused ? ((c.body && c.body.text) || JSON.stringify(c.body || {})) : c.ours;
+        const head = c.refused
+            ? `${what} · refused`
+            : `${what} · overwritten`;
+        const why = c.refused
+            ? `The server refused this write: ${REFUSALS[c.refused] || c.detail || 'it would not say why'} (${c.refused}).`
+            : 'Another device changed this while your version was still queued, and theirs was kept.';
+        return `<div class="conflict-card">
+            <div class="conflict-head"><span>${escapeHtml(head)}</span><span class="conflict-when">${escapeHtml(conflictWhen(c.at))}</span></div>
+            <div class="conflict-why">${escapeHtml(why)}</div>
+            <div class="conflict-label">What you wrote</div>
+            <div class="conflict-text">${escapeHtml(mine === undefined || mine === null ? '' : String(mine))}</div>
+            ${c.theirs !== undefined ? `<div class="conflict-label">What is there now</div>
+            <div class="conflict-text theirs">${escapeHtml(String(c.theirs))}</div>` : ''}
+        </div>`;
+    }
+    function renderConflicts() {
+        const log = conflictsNow();
+        conflictBtn.style.display = log.length ? '' : 'none';
+        conflictBtn.textContent = `Unsaved ${log.length}`;
+        conflictBtn.title = `${log.length} write${log.length === 1 ? '' : 's'} that never landed — the text is kept here`;
+        if (!log.length) { conflictPanel.style.display = 'none'; return; }
+        if (conflictPanel.style.display === 'none') return;         // closed: nothing to draw
+        conflictList.innerHTML = log.slice().reverse().map(conflictCard).join('');
+    }
+    function toggleConflictPanel(open) {
+        const show = open === undefined ? conflictPanel.style.display === 'none' : open;
+        conflictPanel.style.display = show ? 'block' : 'none';
+        if (show) { conflictList.innerHTML = conflictsNow().slice().reverse().map(conflictCard).join(''); }
+    }
+    conflictBtn.addEventListener('click', () => toggleConflictPanel());
+    document.getElementById('conflictClose').addEventListener('click', () => toggleConflictPanel(false));
+    document.getElementById('conflictClear').addEventListener('click', () => {
+        store.clearConflicts();
+        toggleConflictPanel(false);
+        renderConflicts();
+    });
+    document.addEventListener('keydown', ev => {
+        if (ev.key === 'Escape' && conflictPanel.style.display !== 'none') toggleConflictPanel(false);
+    });
+
     // ── Init ──
     function renderAll() {
         renderIdentity();
+        renderConflicts();
         renderCalendar();
         renderTimeline();
         renderCurrentTab();
     }
     store.onChange(renderAll);
     renderIdentity();
+    renderConflicts();
     calCursor = getToday();
     setFormDate(getToday());
     if (window.innerWidth < 1100) toggleCalPanel(true);
