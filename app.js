@@ -1293,30 +1293,32 @@
         document.getElementById('calLogBtn').classList.toggle('active', open);
         if (open) {
             renderLogForm();
-            if (selectedDay !== null) document.getElementById('calLogText').focus();
+            document.getElementById('calLogText').focus();
         }
     });
 
+    // With no day selected the form logs on "today" rather than going dead: a greyed
+    // Add Event with the reason above it reads as a broken button, not an instruction.
+    function logDay() { return selectedDay !== null ? selectedDay : getToday(); }
     function renderLogForm() {
         const heading = document.getElementById('calLogHeading');
-        const canLog = selectedDay !== null;
-        heading.innerHTML = canLog
-            ? `Log on <span>${escapeHtml(formatDateShort(selectedDay))}</span>`
-            : 'Select a day above to log an event';
-        document.getElementById('calLogAdd').disabled = !canLog;
+        heading.innerHTML = `Log on <span>${escapeHtml(formatDateShort(logDay()))}</span>`
+            + (selectedDay === null ? ' <em>— today; tap a day above to change</em>' : '');
+        document.getElementById('calLogAdd').disabled = false;
         if (currentDistrict && !calLogDistrict.dataset.touched) calLogDistrict.value = currentDistrict;
     }
     calLogDistrict.addEventListener('change', () => { calLogDistrict.dataset.touched = '1'; });
 
     document.getElementById('calLogAdd').addEventListener('click', () => {
         const text = document.getElementById('calLogText').value.trim();
-        if (!text || selectedDay === null) return;
+        if (!text) return;
+        const day = logDay();
         const district = calLogDistrict.value || null;
         const place = document.getElementById('calLogPlace').value.trim();
         const time = document.getElementById('calLogTime').value;
         const character = document.getElementById('charSelect').value;
         const visibility = document.getElementById('calLogVis').value;
-        if (!addEvent(district, selectedDay, time, text, character, place, visibility)) return;
+        if (!addEvent(district, day, time, text, character, place, visibility)) return;
         document.getElementById('calLogText').value = '';
         document.getElementById('calLogPlace').value = '';
         renderCalendar();

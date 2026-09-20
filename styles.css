@@ -622,6 +622,7 @@ body {
 }
 .cal-log h4 { font-size: 13px; color: #887750; margin-bottom: 8px; font-weight: normal; }
 .cal-log h4 span { color: #c9b882; }
+.cal-log h4 em { font-style: normal; color: #6f6444; }
 .cal-log .form-row { margin-bottom: 6px; }
 .cal-log .form-row input, .cal-log .form-row select, .cal-log .form-row textarea { font-size: 13px; padding: 4px 7px; }
 .cal-log .form-row textarea { min-height: 42px; }
