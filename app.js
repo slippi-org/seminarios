@@ -415,6 +415,11 @@
             settings: normalizeSettings(cache.settings)
         };
         let serverTime = cache.server_time || null;
+        // The first pull of each load asks for everything, not just the delta. Deletes
+        // travel as tombstones, so a row removed on the server by hand -- or one that
+        // stopped being visible to this player -- would otherwise sit in this cache
+        // forever. A full pull prunes it; after that, deltas as usual.
+        let firstPull = true;
         let outbox = readJson(OUTBOX_KEY, []);
         const listeners = [];
         const status = {
@@ -555,7 +560,7 @@
         }
 
         async function pull() {
-            const since = serverTime;
+            const since = firstPull ? null : serverTime;
             const path = `/state?scope=${encodeURIComponent(SCOPE)}` + (since ? `&since=${encodeURIComponent(since)}` : '');
             let res;
             try { res = await api('GET', path); } catch { status.online = false; return; }
@@ -568,6 +573,7 @@
             const pendingSettings = pendingFor('settings', 'settings');
             Object.assign(state.settings, normalizeSettings(d.settings), pendingSettings ? pendingSettings.body : {});
             serverTime = d.server_time;   // opaque cursor; handed back verbatim as `since`
+            firstPull = false;            // only after one has actually succeeded
             status.lastSync = Date.now();
             status.error = null;
             persist();
