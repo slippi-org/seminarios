@@ -364,6 +364,7 @@
     const CONFLICT_KEY = 'seminarios-conflicts';
     const POLL_MS = 20000;
     const REQUEST_TIMEOUT_MS = 15000;
+    const RETRY_MAX_MS = 600000;            // a day-long lockout still looks in every 10 min
     const API_BASE = localStorage.getItem('seminarios-api')
         || (['localhost', '127.0.0.1'].includes(location.hostname)
             ? 'http://localhost:9286/api/v1'
@@ -427,7 +428,11 @@
         const listeners = [];
         const status = {
             mode: 'remote', online: navigator.onLine, pending: outbox.length, syncing: false,
-            auth: 'unknown', lastSync: cache.last_sync || null, error: null
+            auth: 'unknown', lastSync: cache.last_sync || null, error: null,
+            // Writes paused until the server said to come back. Its own field because
+            // reads are not limited: the pull that succeeds a moment later clears
+            // `error`, and the pill would then look idle with a full outbox.
+            paused: null, pausedUntil: 0
         };
         const self = {
             mode: 'remote',
@@ -467,8 +472,20 @@
                 });
                 let data = null;
                 try { data = await res.json(); } catch { /* no body */ }
-                return { status: res.status, data };
+                return { status: res.status, data, retryAfter: retryAfterMs(res) };
             } finally { clearTimeout(timer); }
+        }
+
+        // `Retry-After` is seconds or an HTTP date. Cross-origin it is readable only
+        // because the API exposes it (CORS); without that this is always null and we
+        // fall back to the poll, which is the old behavior rather than a broken one.
+        function retryAfterMs(res) {
+            const raw = res.headers.get('Retry-After');
+            if (!raw) return null;
+            const seconds = Number(raw);
+            if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+            const when = Date.parse(raw);
+            return Number.isFinite(when) ? Math.max(0, when - Date.now()) : null;
         }
 
         function pendingFor(table, id) { return outbox.find(o => o.table === table && o.id === id && !o.inflight); }
@@ -524,10 +541,28 @@
             return api('DELETE', `/${table}/${id}`);
         }
 
+        // A 429 used to stop the outbox until the next poll, so importing a few hundred
+        // rows crawled: 60 writes, then twenty idle seconds, then 60 more. The server now
+        // says exactly when a slot frees, so wait that long and carry on -- and until then
+        // do not even try, since a retry that is certain to be refused is one more request
+        // on a tunnel that is already saying no. Reads are not limited, so polling
+        // continues throughout.
+        let retryTimer = null;
+        let retryNotBefore = 0;
+        function scheduleRetry(ms) {
+            if (ms === null || ms === undefined) return;   // no advice: the next poll retries
+            const wait = Math.min(Math.max(ms, 250), RETRY_MAX_MS);
+            retryNotBefore = Date.now() + wait;
+            status.pausedUntil = retryNotBefore;
+            if (retryTimer) clearTimeout(retryTimer);
+            retryTimer = setTimeout(() => { retryTimer = null; tick(); }, wait);
+        }
+
         // Returns false only when the network failed; every other outcome lets the pull proceed.
         let flushing = false;
         async function flush() {
             if (flushing) return true;
+            if (Date.now() < retryNotBefore) return true;
             flushing = true;
             status.syncing = true;
             let reachable = true;
@@ -541,7 +576,10 @@
                     status.online = true;
                     if (res.status === 401) { status.auth = 'rejected'; item.inflight = false; break; }
                     if (res.status === 429 || res.status >= 500) {
-                        status.error = `server ${res.status}`; item.inflight = false; break;
+                        status.paused = res.status === 429 ? 'rate limited' : `server ${res.status}`;
+                        item.inflight = false;
+                        scheduleRetry(res.retryAfter);
+                        break;
                     }
                     if (res.status >= 400) {
                         // Refused for good (validation, permission, unknown row): drop it, keep the text.
@@ -554,6 +592,8 @@
                     outbox.shift();
                     persistOutbox();
                     status.error = null;
+                    status.paused = null;
+                    status.pausedUntil = 0;
                 }
             } finally {
                 flushing = false;
@@ -1677,14 +1717,26 @@
         else if (st.auth === 'rejected') { text = 'Token rejected'; cls = 'error'; }
         else if (!me()) { text = st.online ? 'Connecting…' : 'Offline'; cls = st.online ? '' : 'offline'; }
         else if (!st.online) { text = `Offline · ${st.pending} pending`; cls = 'offline'; }
+        // Both of these come before the pending count, not after it: a queue is the normal
+        // case while writes are paused, so "Syncing · 40 pending" would hide the one word
+        // that explains why nothing is moving.
+        else if (st.paused) {
+            text = (st.paused === 'rate limited' ? 'Rate limited' : `Retrying (${st.paused})`)
+                + ` · ${st.pending} pending`;
+            cls = 'pending';
+        }
+        else if (st.error) { text = `Retrying (${st.error})` + (st.pending ? ` · ${st.pending} pending` : ''); cls = 'offline'; }
         else if (st.pending) { text = `Syncing · ${st.pending} pending`; cls = 'pending'; }
-        else if (st.error) { text = `Retrying (${st.error})`; cls = 'offline'; }
         else { text = me().display_name + (isGm() ? ' · GM' : ''); cls = 'ok'; }
         el.textContent = text;
         el.className = 'sync-status ' + cls;
         el.title = st.mode === 'local'
             ? 'No token: entries stay in this browser. Use your enrollment link, or enter your token, to join the table.'
-            : (st.lastSync ? 'Last sync ' + new Date(st.lastSync).toLocaleTimeString() : '') + (st.auth === 'rejected' ? ' — enter a valid token' : '');
+            : (st.lastSync ? 'Last sync ' + new Date(st.lastSync).toLocaleTimeString() : '')
+              + (st.auth === 'rejected' ? ' — enter a valid token' : '')
+              + (st.pausedUntil > Date.now()
+                 ? ` — writes resume about ${new Date(st.pausedUntil).toLocaleTimeString()}; nothing is lost`
+                 : '');
     }
     const tokenBox = document.getElementById('tokenBox');
     document.getElementById('tokenBtn').addEventListener('click', () => {
