@@ -225,7 +225,7 @@ body {
     line-height: 1.45;
     color: #ccc;
 }
-.event-delete {
+.event-delete, .event-edit {
     background: none;
     border: none;
     color: #555;
@@ -235,6 +235,26 @@ body {
     margin-left: 6px;
 }
 .event-delete:hover { color: #a33; }
+.event-edit:hover { color: #887750; }
+
+/* An event's text, swapped for a box while it is being edited (app.js). */
+.event-edit-box {
+    width: 100%;
+    min-height: 62px;
+    box-sizing: border-box;
+    background: #151310;
+    color: #ddd;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-family: 'Crimson Text', serif;
+    font-size: 14px;
+    line-height: 1.45;
+    resize: vertical;
+}
+.event-edit-box:focus { outline: none; border-color: #887750; }
+.agenda-text .event-edit-box { font-size: 13px; line-height: 1.4; min-height: 52px; }
+.agenda-text .notes-save-hint { cursor: default; }
 
 .no-events {
     color: #555;
@@ -690,7 +710,7 @@ body {
 .agenda-district { font-size: 12px; color: #c9b882; }
 .agenda-item.no-district { cursor: default; }
 .agenda-item.no-district .agenda-district { color: #887750; font-style: italic; }
-.agenda-delete {
+.agenda-delete, .agenda-edit {
     background: none;
     border: none;
     color: #444;
@@ -699,8 +719,9 @@ body {
     padding: 0 0 0 6px;
     line-height: 1;
 }
-.agenda-item:hover .agenda-delete { color: #666; }
+.agenda-item:hover .agenda-delete, .agenda-item:hover .agenda-edit { color: #666; }
 .agenda-delete:hover { color: #a33 !important; }
+.agenda-edit:hover { color: #c9b882 !important; }
 .agenda-text { font-size: 13px; line-height: 1.4; color: #bbb; margin-top: 2px; }
 
 .form-hint { font-size: 11px; color: #666; font-style: italic; margin: -4px 0 8px; }

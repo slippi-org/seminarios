@@ -890,6 +890,8 @@
     // ── Events ──
     function renderEvents() {
         const list = document.getElementById('eventsList');
+        // Never rebuild a list with an open edit box: a poll would take the cursor with it.
+        if (eventEditOpen(list)) return;
         const events = getEvents(currentDistrict);
 
         if (events.length === 0) {
@@ -903,7 +905,7 @@
                             <span class="event-date" title="${escapeHtml(formatDate(e.day))}">${lockGlyph(e)}${escapeHtml(formatDateShort(e.day))}, ${e.time_of_day}${e.place ? ' · ' + escapeHtml(e.place) : ''}</span>
                             <span>
                                 <span class="event-char" style="background:${eventColor(e)}" title="${escapeHtml(eventWhoTitle(e))}">${escapeHtml(eventWho(e))}</span>
-                                ${canMutate(e) ? `<button class="event-delete" data-id="${e.id}" title="Delete">&times;</button>` : ''}
+                                ${canMutate(e) ? `<button class="event-edit" data-id="${e.id}" title="Edit">&#9998;</button><button class="event-delete" data-id="${e.id}" title="Delete">&times;</button>` : ''}
                             </span>
                         </div>
                         <div class="event-text">${escapeHtml(e.text)}</div>
@@ -921,6 +923,99 @@
             });
         });
     }
+
+    // ── Editing an event ──
+    // The API patches any field, but the fix the table actually wants is a typo in
+    // `text`, so that is what the UI offers: an inline box on a row you may change
+    // (`canMutate`), saved like a note -- on blur or after a pause, never per keystroke
+    // (PLAN.md §7.5). Day, place and visibility stay as logged; log a new event instead.
+    // A list holding an open box is not re-rendered, so a poll cannot pull the cursor out
+    // from under an edit; the box closes on blur and the list catches up on the next render.
+    const IDLE_SAVE_MS = 5000;              // shared with the notes below
+    const editTimers = new Map();
+    // Taking a focused box out of the DOM fires `focusout` synchronously, and the box is
+    // still connected when it does -- so a close would otherwise re-enter the save below
+    // and write the text a cancel was throwing away.
+    const closingEdits = new WeakSet();
+
+    function eventEditOpen(container) { return !!container.querySelector('.event-edit-box'); }
+
+    function beginEventEdit(btn) {
+        const rowEl = btn.closest('.event-item, .agenda-item');
+        const holder = rowEl && rowEl.querySelector('.event-text, .agenda-text');
+        const row = DATA.events.find(e => e.id === btn.dataset.id);
+        if (!holder || !row || !canMutate(row)) return;
+        closeOpenEventEdits();              // one box at a time
+        const ta = document.createElement('textarea');
+        ta.className = 'event-edit-box';
+        ta.dataset.id = row.id;
+        ta.value = row.text;
+        const hint = document.createElement('div');
+        hint.className = 'notes-save-hint';
+        hint.textContent = 'Saves when you pause · Esc to cancel';
+        holder.innerHTML = '';
+        holder.append(ta, hint);
+        ta.focus();
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+    }
+    function writeEventEdit(ta) {
+        clearTimeout(editTimers.get(ta));
+        editTimers.delete(ta);
+        const row = DATA.events.find(e => e.id === ta.dataset.id);
+        const text = ta.value.trim();
+        // An emptied box means "never mind", not a delete: deleting is its own button.
+        if (row && text && text !== row.text) store.updateEvent(row.id, { text });
+    }
+    function closeEventEdit(ta) {
+        if (closingEdits.has(ta)) return;
+        closingEdits.add(ta);
+        const holder = ta.closest('.event-text, .agenda-text');
+        const row = DATA.events.find(e => e.id === ta.dataset.id);
+        if (holder) holder.textContent = row ? row.text : '';
+    }
+    // Write first, close second: while the box is still in the list, the guard above keeps
+    // the write's own re-render from rebuilding it, so a click already on its way to
+    // another button on the same row still lands.
+    function saveEventEdit(ta) {
+        if (!ta.isConnected || closingEdits.has(ta)) return;
+        writeEventEdit(ta);
+        closeEventEdit(ta);
+    }
+    function closeOpenEventEdits() { document.querySelectorAll('.event-edit-box').forEach(saveEventEdit); }
+
+    function wireEventEditing(container) {
+        // Capture, not bubble: an agenda row's own click handler jumps the map to its
+        // district, and it would run first.
+        container.addEventListener('click', ev => {
+            const btn = ev.target.closest('.event-edit, .agenda-edit');
+            if (btn) { ev.stopPropagation(); beginEventEdit(btn); return; }
+            if (ev.target.closest('.event-edit-box, .notes-save-hint')) ev.stopPropagation();
+        }, true);
+        container.addEventListener('input', ev => {
+            const ta = ev.target;
+            if (!ta.classList.contains('event-edit-box')) return;
+            clearTimeout(editTimers.get(ta));
+            editTimers.set(ta, setTimeout(() => writeEventEdit(ta), IDLE_SAVE_MS));
+        });
+        container.addEventListener('focusout', ev => {
+            if (ev.target.classList.contains('event-edit-box')) saveEventEdit(ev.target);
+        });
+        container.addEventListener('keydown', ev => {
+            const ta = ev.target;
+            if (!ta.classList.contains('event-edit-box')) return;
+            if (ev.key === 'Escape') {
+                ev.preventDefault();
+                clearTimeout(editTimers.get(ta));
+                editTimers.delete(ta);
+                closeEventEdit(ta);         // detaches the box; the focusout that follows is a no-op
+            } else if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) {
+                ev.preventDefault();
+                saveEventEdit(ta);
+            }
+        });
+    }
+    ['eventsList', 'calAgenda'].forEach(id => wireEventEditing(document.getElementById(id)));
+    window.addEventListener('beforeunload', closeOpenEventEdits);
 
     // ── Add Event ──
     const evMonth = document.getElementById('eventMonth');
@@ -983,7 +1078,6 @@
     // first, GM-only notes below a divider, each block by updated_at (PLAN.md §12 Q2).
     // Notes the caller may change are textareas that save on blur or after a pause --
     // never per keystroke, which would meet the API's write limit (PLAN.md §7.5).
-    const NOTE_IDLE_MS = 5000;
     const notesList = document.getElementById('notesList');
     const noteTimers = new Map();
 
@@ -1043,7 +1137,7 @@
         const ta = ev.target;
         if (ta.tagName !== 'TEXTAREA') return;
         clearTimeout(noteTimers.get(ta));
-        noteTimers.set(ta, setTimeout(() => saveNote(ta), NOTE_IDLE_MS));
+        noteTimers.set(ta, setTimeout(() => saveNote(ta), IDLE_SAVE_MS));
     });
     notesList.addEventListener('focusout', ev => { if (ev.target.tagName === 'TEXTAREA') saveNote(ev.target); });
     window.addEventListener('beforeunload', flushNoteSaves);
@@ -1240,6 +1334,7 @@
     }
 
     function renderAgenda(rangeEvents) {
+        if (eventEditOpen(calAgenda)) return;   // as in renderEvents: not under a cursor
         let list, heading;
         if (selectedDay !== null) {
             list = eventsInRange(selectedDay, selectedDay);
@@ -1264,7 +1359,7 @@
                     <div class="agenda-item${inDistrict ? '' : ' no-district'}${e.visibility === 'gm' ? ' vis-gm' : ''}" style="border-left-color:${eventColor(e)}" data-district="${e.place_id || ''}" title="${escapeHtml(eventWhoTitle(e))}${inDistrict ? ' · show on map' : ''}">
                         <div class="agenda-head">
                             <span class="agenda-district">${lockGlyph(e)}${escapeHtml(eventPlaceLabel(e))}</span>
-                            <span class="event-date">${e.time_of_day}${canMutate(e) ? `<button class="agenda-delete" data-id="${e.id}" title="Delete">&times;</button>` : ''}</span>
+                            <span class="event-date">${e.time_of_day}${canMutate(e) ? `<button class="agenda-edit" data-id="${e.id}" title="Edit">&#9998;</button><button class="agenda-delete" data-id="${e.id}" title="Delete">&times;</button>` : ''}</span>
                         </div>
                         <div class="agenda-text">${escapeHtml(e.text)}</div>
                     </div>`;
